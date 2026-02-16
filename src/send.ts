@@ -1,0 +1,195 @@
+import type { JmapClient } from "./jmap-client.js";
+import type { CoreConfig } from "./types.js";
+import { resolveJmapAccount } from "./accounts.js";
+import { JmapMethodError } from "./jmap-client.js";
+import { JmapClient as JmapClientImpl } from "./jmap-client.js";
+import { isJmapThreadTarget, normalizeJmapTarget, parseJmapThreadTarget } from "./normalize.js";
+import { getJmapRuntime } from "./runtime.js";
+import { getJmapClient, getThreadContext, setJmapClient, setThreadContext } from "./store.js";
+
+function logJmapOutbound(accountId: string, message: string) {
+  const logger = getJmapRuntime().logging?.getChildLogger?.({
+    channel: "jmap",
+    accountId,
+  });
+  logger?.info?.(message);
+}
+
+async function resolveClient(params: {
+  accountId?: string | null;
+  cfg?: CoreConfig;
+  preferExisting?: boolean;
+}): Promise<JmapClient> {
+  const normalizedAccountId = params.accountId?.trim() || "default";
+  const existing = getJmapClient(normalizedAccountId);
+  if (existing && (params.preferExisting ?? true)) {
+    if (!existing.isReady) {
+      await existing.init();
+    }
+    return existing;
+  }
+
+  const core = getJmapRuntime();
+  const cfg = params.cfg ?? (core.config.loadConfig() as CoreConfig);
+  const account = resolveJmapAccount({ cfg, accountId: params.accountId });
+  if (!account.configured || !account.token.trim()) {
+    throw new Error(
+      `JMAP is not configured for account "${account.accountId}" (set channels.jmap.apiToken/apiTokenFile or JMAP_API_TOKEN/JMAIL_API_TOKEN).`,
+    );
+  }
+
+  const client = new JmapClientImpl({
+    sessionUrl: account.sessionUrl,
+    token: account.token,
+  });
+  await client.init();
+  setJmapClient(account.accountId, client);
+  return client;
+}
+
+export async function sendJmapReplyToThread(params: {
+  accountId?: string | null;
+  threadId: string;
+  text: string;
+  mediaUrls?: string[];
+}): Promise<{ messageId: string; threadId?: string }> {
+  const threadId = params.threadId.trim().toLowerCase();
+  if (!threadId) {
+    throw new Error("JMAP thread id is required");
+  }
+
+  const text = params.text.trim();
+  const mediaUrls = (params.mediaUrls ?? []).map((url) => url.trim()).filter(Boolean);
+  if (!text && mediaUrls.length === 0) {
+    throw new Error("JMAP outbound message is empty");
+  }
+
+  const client = await resolveClient({ accountId: params.accountId });
+  const state = client.state;
+  let context = getThreadContext({
+    accountId: state.mailAccountId,
+    threadId,
+  });
+  if (!context) {
+    const fetched = await client.getThreadContext(threadId);
+    if (fetched) {
+      setThreadContext(fetched);
+      context = fetched;
+    }
+  }
+  if (!context) {
+    throw new Error(`JMAP thread not found: ${threadId}`);
+  }
+
+  const result = await client.sendToThread({
+    thread: context,
+    text,
+    mediaUrls,
+  });
+  logJmapOutbound(
+    state.mailAccountId,
+    `outbound thread reply sent thread=${threadId} messageId=${result.messageId} target=${context.replyTo.map((x) => x.email).join(",") || context.from.map((x) => x.email).join(",") || context.to.map((x) => x.email).join(",")}`,
+  );
+  getJmapRuntime().channel.activity.record({
+    channel: "jmap",
+    accountId: state.mailAccountId,
+    direction: "outbound",
+  });
+  return result;
+}
+
+export async function sendJmapMessageToAddress(params: {
+  accountId?: string | null;
+  toEmail: string;
+  text: string;
+  subject?: string;
+}): Promise<{ messageId: string; threadId?: string }> {
+  const client = await resolveClient({ accountId: params.accountId });
+  const result = await client.sendToAddress({
+    toEmail: params.toEmail,
+    text: params.text,
+    subject: params.subject,
+  });
+  logJmapOutbound(
+    client.state.mailAccountId,
+    `outbound direct sent to=${params.toEmail} messageId=${result.messageId}`,
+  );
+  getJmapRuntime().channel.activity.record({
+    channel: "jmap",
+    accountId: client.state.mailAccountId,
+    direction: "outbound",
+  });
+  return result;
+}
+
+export async function sendJmapByTarget(params: {
+  cfg: CoreConfig;
+  accountId?: string | null;
+  to: string;
+  text: string;
+  mediaUrl?: string;
+  threadId?: string | number | null;
+}): Promise<{ messageId: string; threadId?: string; to: string }> {
+  const normalized = normalizeJmapTarget(params.to);
+  if (!normalized) {
+    throw new Error("invalid JMAP target");
+  }
+
+  const mediaUrls = params.mediaUrl?.trim() ? [params.mediaUrl.trim()] : undefined;
+
+  const threadHint =
+    params.threadId !== null && params.threadId !== undefined
+      ? String(params.threadId).trim().toLowerCase()
+      : "";
+
+  if (threadHint) {
+    const result = await sendJmapReplyToThread({
+      accountId: params.accountId,
+      threadId: threadHint,
+      text: params.text,
+      mediaUrls,
+    });
+    return {
+      ...result,
+      to: `thread:${threadHint}`,
+    };
+  }
+
+  if (isJmapThreadTarget(normalized)) {
+    const threadId = parseJmapThreadTarget(normalized);
+    if (!threadId) {
+      throw new Error("invalid JMAP thread target");
+    }
+    const result = await sendJmapReplyToThread({
+      accountId: params.accountId,
+      threadId,
+      text: params.text,
+      mediaUrls,
+    });
+    return {
+      ...result,
+      to: normalized,
+    };
+  }
+
+  const withMedia = mediaUrls?.length
+    ? `${params.text}\n\nAttachment: ${mediaUrls[0]}`
+    : params.text;
+  const result = await sendJmapMessageToAddress({
+    accountId: params.accountId,
+    toEmail: normalized,
+    text: withMedia,
+    subject: "OpenClaw",
+  });
+  return {
+    ...result,
+    to: normalized,
+  };
+}
+
+export function isRecoverableJmapPollError(error: unknown): boolean {
+  if (error instanceof JmapMethodError) {
+    return error.type === "cannotCalculateChanges" || error.type === "stateMismatch";
+  }
+  return false;
+}

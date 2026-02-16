@@ -1,0 +1,9 @@
+{
+  "id": "jmap",
+  "channels": ["jmap"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

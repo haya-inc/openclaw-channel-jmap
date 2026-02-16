@@ -1,0 +1,621 @@
+import type {
+  JmapEmail,
+  JmapEmailAddress,
+  JmapIdentity,
+  JmapMailbox,
+  JmapQueryChangesResult,
+  JmapSendResult,
+  JmapThreadContext,
+} from "./types.js";
+import {
+  buildThreadContextFromEmail,
+  compact,
+  ensureArray,
+  extractTextFromEmail,
+  formatReplySubject,
+  normalizeIdentityEmails,
+  parseTimestampMs,
+  pickIdentity,
+} from "./jmap-email.js";
+import { normalizeEmailAddress } from "./normalize.js";
+import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "./types.js";
+
+type JmapMethodCallArgs = Record<string, unknown>;
+type JmapMethodCall = [string, JmapMethodCallArgs, string];
+type JmapMethodResponse = [string, Record<string, unknown>, string];
+
+type JmapApiResponse = {
+  methodResponses?: JmapMethodResponse[];
+  sessionState?: string;
+};
+
+type JmapAccountInfo = {
+  accountCapabilities?: Record<string, unknown>;
+};
+
+type JmapSessionResponse = {
+  apiUrl?: string;
+  username?: string;
+  primaryAccounts?: Record<string, string>;
+  accounts?: Record<string, JmapAccountInfo>;
+};
+
+export type JmapClientInit = {
+  apiUrl: string;
+  username?: string;
+  mailAccountId: string;
+  submissionAccountId: string;
+  inboxMailboxId?: string;
+  sentMailboxId?: string;
+  draftsMailboxId?: string;
+  identityId: string;
+  identityEmail: string;
+  identityName?: string;
+  selfEmails: Set<string>;
+};
+
+export class JmapMethodError extends Error {
+  readonly type: string;
+
+  constructor(type: string, message: string) {
+    super(message);
+    this.type = type;
+  }
+}
+
+export class JmapClient {
+  private readonly sessionUrl: string;
+  private readonly token: string;
+  private readonly accountIdHint?: string;
+  private initState: JmapClientInit | null = null;
+
+  constructor(params: { sessionUrl: string; token: string; accountIdHint?: string }) {
+    this.sessionUrl = params.sessionUrl;
+    this.token = params.token;
+    this.accountIdHint = params.accountIdHint;
+  }
+
+  get isReady(): boolean {
+    return this.initState !== null;
+  }
+
+  get state(): JmapClientInit {
+    if (!this.initState) {
+      throw new Error("JMAP client is not initialized");
+    }
+    return this.initState;
+  }
+
+  async init(): Promise<JmapClientInit> {
+    if (this.initState) {
+      return this.initState;
+    }
+    const session = await this.fetchSession();
+    const mailAccountId = this.resolveMailAccountId(session);
+    const submissionAccountId = this.resolveSubmissionAccountId(session, mailAccountId);
+
+    const [mailboxes, identities] = await Promise.all([
+      this.getMailboxes(session.apiUrl, mailAccountId),
+      this.getIdentities(session.apiUrl, submissionAccountId),
+    ]);
+
+    const identity = pickIdentity(identities, session.username);
+    const identityEmail = normalizeEmailAddress(identity?.email);
+    if (!identity?.id || !identityEmail) {
+      throw new Error("JMAP identity not found for sending emails");
+    }
+
+    const inboxMailboxId = mailboxes.find((box) => box.role === "inbox")?.id;
+    const sentMailboxId = mailboxes.find((box) => box.role === "sent")?.id;
+    const draftsMailboxId = mailboxes.find((box) => box.role === "drafts")?.id;
+
+    this.initState = {
+      apiUrl: session.apiUrl,
+      username: session.username,
+      mailAccountId,
+      submissionAccountId,
+      inboxMailboxId,
+      sentMailboxId,
+      draftsMailboxId,
+      identityId: identity.id,
+      identityEmail,
+      identityName: identity.name?.trim() || undefined,
+      selfEmails: normalizeIdentityEmails(identity, session.username),
+    };
+    return this.initState;
+  }
+
+  async queryInboxState(): Promise<string> {
+    const state = this.state;
+    const result = await this.callMethod("Email/query", {
+      accountId: state.mailAccountId,
+      ...(state.inboxMailboxId ? { filter: { inMailbox: state.inboxMailboxId } } : {}),
+      sort: [{ property: "receivedAt", isAscending: false }],
+      calculateTotal: false,
+      position: 0,
+      limit: 1,
+    });
+    const queryState = String(result.queryState ?? "").trim();
+    if (!queryState) {
+      throw new Error("JMAP Email/query did not return queryState");
+    }
+    return queryState;
+  }
+
+  async queryUnreadInboxIds(params?: { limit?: number; position?: number }): Promise<string[]> {
+    const state = this.state;
+    const limit =
+      typeof params?.limit === "number" && Number.isFinite(params.limit) && params.limit > 0
+        ? Math.trunc(params.limit)
+        : 50;
+    const position =
+      typeof params?.position === "number" && Number.isFinite(params.position) && params.position >= 0
+        ? Math.trunc(params.position)
+        : 0;
+    const filter = compact({
+      inMailbox: state.inboxMailboxId,
+      notKeyword: "$seen",
+    });
+    const result = await this.callMethod("Email/query", {
+      accountId: state.mailAccountId,
+      filter,
+      sort: [{ property: "receivedAt", isAscending: true }],
+      calculateTotal: false,
+      position,
+      limit,
+    });
+
+    return ensureArray(result.ids as string[])
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  async queryInboxChanges(sinceQueryState: string): Promise<JmapQueryChangesResult> {
+    const state = this.state;
+    const result = await this.callMethod("Email/queryChanges", {
+      accountId: state.mailAccountId,
+      sinceQueryState,
+      ...(state.inboxMailboxId ? { filter: { inMailbox: state.inboxMailboxId } } : {}),
+      sort: [{ property: "receivedAt", isAscending: false }],
+      calculateTotal: false,
+    });
+
+    return {
+      oldQueryState: String(result.oldQueryState ?? "").trim(),
+      newQueryState: String(result.newQueryState ?? "").trim(),
+      removed: ensureArray(result.removed as string[]),
+      added: ensureArray(result.added as Array<{ id: string; index: number }>),
+      hasMoreChanges: Boolean(result.hasMoreChanges),
+      upToId: typeof result.upToId === "string" ? result.upToId : undefined,
+      total: typeof result.total === "number" ? result.total : undefined,
+    };
+  }
+
+  async getEmails(ids: string[]): Promise<JmapEmail[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const state = this.state;
+    const result = await this.callMethod("Email/get", {
+      accountId: state.mailAccountId,
+      ids,
+      properties: [
+        "id",
+        "threadId",
+        "mailboxIds",
+        "from",
+        "to",
+        "cc",
+        "bcc",
+        "replyTo",
+        "subject",
+        "preview",
+        "receivedAt",
+        "sentAt",
+        "messageId",
+        "inReplyTo",
+        "references",
+        "textBody",
+        "htmlBody",
+        "bodyValues",
+      ],
+      fetchTextBodyValues: true,
+      fetchHTMLBodyValues: false,
+    });
+
+    return ensureArray(result.list as JmapEmail[]).filter((item) => item.id);
+  }
+
+  async markEmailsSeen(ids: string[]): Promise<void> {
+    const state = this.state;
+    const validIds = ids.map((id) => id.trim()).filter(Boolean);
+    if (validIds.length === 0) {
+      return;
+    }
+    const update = Object.fromEntries(
+      validIds.map((id) => [
+        id,
+        {
+          keywords: {
+            $seen: true,
+          },
+        },
+      ]),
+    );
+    await this.callMethod("Email/set", {
+      accountId: state.mailAccountId,
+      update,
+    });
+  }
+
+  async getThreadContext(threadId: string): Promise<JmapThreadContext | null> {
+    const normalizedThreadId = threadId.trim();
+    if (!normalizedThreadId) {
+      return null;
+    }
+    const state = this.state;
+    const threadResult = await this.callMethod("Thread/get", {
+      accountId: state.mailAccountId,
+      ids: [normalizedThreadId],
+    });
+    const threads = ensureArray(
+      threadResult.list as Array<{ id: string; emailIds?: string[] }>,
+    ).filter((item) => item.id === normalizedThreadId);
+
+    if (threads.length === 0) {
+      return null;
+    }
+    const emailIds = ensureArray(threads[0].emailIds);
+    if (emailIds.length === 0) {
+      return null;
+    }
+
+    const recentIds = emailIds.slice(-20);
+    const emails = await this.getEmails(recentIds);
+    const latest = emails.slice().sort((a, b) => parseTimestampMs(b) - parseTimestampMs(a))[0];
+    if (!latest) {
+      return null;
+    }
+    return buildThreadContextFromEmail(state.mailAccountId, latest);
+  }
+
+  toInboundText(email: JmapEmail): string {
+    return extractTextFromEmail(email);
+  }
+
+  buildThreadContext(email: JmapEmail): JmapThreadContext | null {
+    const state = this.state;
+    const threadId = (email.threadId ?? "").trim();
+    if (!threadId) {
+      return null;
+    }
+    return buildThreadContextFromEmail(state.mailAccountId, email);
+  }
+
+  isSelfAddress(email?: string | null): boolean {
+    const state = this.state;
+    const normalized = normalizeEmailAddress(email);
+    return normalized ? state.selfEmails.has(normalized) : false;
+  }
+
+  async sendToThread(params: {
+    thread: JmapThreadContext;
+    text: string;
+    mediaUrls?: string[];
+  }): Promise<JmapSendResult> {
+    const state = this.state;
+    const text = params.text.trim();
+    const mediaBlock = ensureArray(params.mediaUrls)
+      .map((url) => url.trim())
+      .filter(Boolean)
+      .map((url) => `Attachment: ${url}`)
+      .join("\n");
+    const bodyText = text ? (mediaBlock ? `${text}\n\n${mediaBlock}` : text) : mediaBlock;
+    if (!bodyText.trim()) {
+      throw new Error("JMAP outbound text is empty");
+    }
+
+    const selectRecipients = (candidates: JmapEmailAddress[]): JmapEmailAddress[] => {
+      const deduped = new Map<string, JmapEmailAddress>();
+      for (const item of candidates) {
+        const email = normalizeEmailAddress(item.email);
+        if (!email || state.selfEmails.has(email)) {
+          continue;
+        }
+        deduped.set(email, {
+          email,
+          name: item.name?.trim() || undefined,
+        });
+      }
+      return [...deduped.values()];
+    };
+    const replyRecipients = selectRecipients(params.thread.replyTo);
+    const fromRecipients = selectRecipients(params.thread.from);
+    const toRecipients = selectRecipients(params.thread.to);
+    const recipients =
+      replyRecipients.length > 0
+        ? replyRecipients
+        : fromRecipients.length > 0
+          ? fromRecipients
+          : toRecipients;
+    if (recipients.length === 0) {
+      throw new Error(`No reply recipient found for thread ${params.thread.threadId}`);
+    }
+
+    return await this.sendEmailInternal({
+      to: recipients,
+      cc: params.thread.cc,
+      subject: formatReplySubject(params.thread.subject),
+      bodyText,
+      inReplyTo: params.thread.latestMessageId,
+      references: params.thread.references,
+      threadId: params.thread.threadId,
+      accountId: state.mailAccountId,
+    });
+  }
+
+  async sendToAddress(params: {
+    toEmail: string;
+    text: string;
+    subject?: string;
+  }): Promise<JmapSendResult> {
+    const toEmail = normalizeEmailAddress(params.toEmail);
+    if (!toEmail) {
+      throw new Error("Recipient email is required");
+    }
+    const text = params.text.trim();
+    if (!text) {
+      throw new Error("JMAP outbound text is empty");
+    }
+
+    return await this.sendEmailInternal({
+      to: [{ email: toEmail }],
+      cc: [],
+      subject: params.subject?.trim() || "OpenClaw",
+      bodyText: text,
+      references: [],
+      accountId: this.state.mailAccountId,
+    });
+  }
+
+  private async sendEmailInternal(params: {
+    to: JmapEmailAddress[];
+    cc: JmapEmailAddress[];
+    subject: string;
+    bodyText: string;
+    inReplyTo?: string;
+    references: string[];
+    threadId?: string;
+    accountId: string;
+  }): Promise<JmapSendResult> {
+    const state = this.state;
+    const bodyPartId = "body-1";
+    const mailboxIds: Record<string, boolean> = {};
+    if (state.draftsMailboxId) {
+      mailboxIds[state.draftsMailboxId] = true;
+    } else if (state.sentMailboxId) {
+      mailboxIds[state.sentMailboxId] = true;
+    } else if (state.inboxMailboxId) {
+      mailboxIds[state.inboxMailboxId] = true;
+    }
+
+    const createEmail = compact({
+      mailboxIds,
+      from: [
+        compact({
+          email: state.identityEmail,
+          name: state.identityName,
+        }),
+      ],
+      to: params.to,
+      cc: params.cc.length > 0 ? params.cc : undefined,
+      subject: params.subject,
+      textBody: [{ partId: bodyPartId, type: "text/plain" }],
+      bodyValues: {
+        [bodyPartId]: {
+          value: params.bodyText,
+        },
+      },
+      inReplyTo: params.inReplyTo ? [params.inReplyTo] : undefined,
+      references: params.references.length > 0 ? params.references : undefined,
+    });
+
+    const emailSet = await this.callMethod("Email/set", {
+      accountId: params.accountId,
+      create: {
+        createEmail,
+      },
+    });
+
+    const created = emailSet.created as Record<string, { id?: string; threadId?: string }>;
+    const createdEmail = created?.createEmail;
+    const emailId = createdEmail?.id?.trim();
+    if (!emailId) {
+      throw new Error("JMAP Email/set did not return created email id");
+    }
+
+    const submissionSet = await this.callMethod("EmailSubmission/set", {
+      accountId: state.submissionAccountId,
+      create: {
+        submitEmail: {
+          emailId,
+          identityId: state.identityId,
+        },
+      },
+    });
+
+    const submissionCreated = submissionSet.created as Record<string, { id?: string }>;
+    const submissionId = submissionCreated?.submitEmail?.id?.trim();
+    if (!submissionId) {
+      throw new Error("JMAP EmailSubmission/set did not return submission id");
+    }
+
+    return {
+      messageId: emailId,
+      threadId: params.threadId || createdEmail?.threadId,
+    };
+  }
+
+  private async fetchSession(): Promise<
+    Required<Pick<JmapSessionResponse, "apiUrl">> & JmapSessionResponse
+  > {
+    const response = await fetch(this.sessionUrl, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(
+        `JMAP session fetch failed (${response.status}): ${body || response.statusText}`,
+      );
+    }
+    const json = (await response.json()) as JmapSessionResponse;
+    const apiUrl = json.apiUrl?.trim();
+    if (!apiUrl) {
+      throw new Error("JMAP session response missing apiUrl");
+    }
+    return { ...json, apiUrl };
+  }
+
+  private resolveMailAccountId(session: JmapSessionResponse): string {
+    const preferred = this.accountIdHint?.trim();
+    if (preferred && session.accounts?.[preferred]) {
+      return preferred;
+    }
+
+    const primary = session.primaryAccounts?.[JMAP_MAIL]?.trim();
+    if (primary) {
+      return primary;
+    }
+
+    const accounts = session.accounts ?? {};
+    for (const [accountId, info] of Object.entries(accounts)) {
+      if ((info.accountCapabilities ?? {})[JMAP_MAIL]) {
+        return accountId;
+      }
+    }
+    const first = Object.keys(accounts)[0]?.trim();
+    if (first) {
+      return first;
+    }
+    throw new Error("JMAP session has no mail account");
+  }
+
+  private resolveSubmissionAccountId(
+    session: JmapSessionResponse,
+    fallbackMailAccountId: string,
+  ): string {
+    const primary = session.primaryAccounts?.[JMAP_SUBMISSION]?.trim();
+    if (primary) {
+      return primary;
+    }
+
+    const preferred = this.accountIdHint?.trim();
+    if (preferred && session.accounts?.[preferred]) {
+      return preferred;
+    }
+
+    return fallbackMailAccountId;
+  }
+
+  private async getMailboxes(apiUrl: string, accountId: string): Promise<JmapMailbox[]> {
+    const result = await this.callApi(apiUrl, [
+      [
+        "Mailbox/get",
+        {
+          accountId,
+          ids: null,
+          properties: ["id", "role", "name"],
+        },
+        "mailbox-get",
+      ],
+    ]);
+    const payload = this.pickMethod(result, "Mailbox/get", "mailbox-get");
+    return ensureArray(payload.list as JmapMailbox[]).filter((box) => box.id);
+  }
+
+  private async getIdentities(apiUrl: string, accountId: string): Promise<JmapIdentity[]> {
+    const result = await this.callApi(apiUrl, [
+      [
+        "Identity/get",
+        {
+          accountId,
+          ids: null,
+          // Keep this list provider-compatible; some servers reject optional fields like isDefault.
+          properties: ["id", "email", "name", "replyTo", "bcc"],
+        },
+        "identity-get",
+      ],
+    ]);
+    const payload = this.pickMethod(result, "Identity/get", "identity-get");
+    return ensureArray(payload.list as JmapIdentity[]).filter((identity) => identity.id);
+  }
+
+  private async callMethod(
+    methodName: string,
+    args: JmapMethodCallArgs,
+  ): Promise<Record<string, unknown>> {
+    const state = this.state;
+    const callId = `${methodName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-0`;
+    const result = await this.callApi(state.apiUrl, [[methodName, args, callId]]);
+    return this.pickMethod(result, methodName, callId);
+  }
+
+  private async callApi(apiUrl: string, methodCalls: JmapMethodCall[]): Promise<JmapApiResponse> {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        using: [JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION],
+        methodCalls,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(
+        `JMAP API request failed (${response.status}): ${body || response.statusText}`,
+      );
+    }
+
+    const json = (await response.json()) as JmapApiResponse;
+    if (!Array.isArray(json.methodResponses)) {
+      throw new Error("JMAP API response missing methodResponses");
+    }
+    return json;
+  }
+
+  private pickMethod(
+    response: JmapApiResponse,
+    expectedMethod: string,
+    callId: string,
+  ): Record<string, unknown> {
+    const matched = ensureArray(response.methodResponses).find((entry) => entry[2] === callId);
+    if (!matched) {
+      throw new Error(`JMAP response missing method result for ${expectedMethod} (${callId})`);
+    }
+    const [methodName, payload] = matched;
+    if (methodName === "error") {
+      const errorType = typeof payload.type === "string" ? payload.type : "unknown";
+      const description = typeof payload.description === "string" ? payload.description : "";
+      throw new JmapMethodError(
+        errorType,
+        `JMAP ${expectedMethod} failed: ${description || errorType}`,
+      );
+    }
+    if (methodName !== expectedMethod) {
+      throw new Error(
+        `Unexpected JMAP method response: expected ${expectedMethod}, got ${methodName}`,
+      );
+    }
+    return payload;
+  }
+}
+export { parseInboundEmail } from "./jmap-email.js";
