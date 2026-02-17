@@ -9,7 +9,7 @@ import { getJmapClient, getThreadContext, setJmapClient, setThreadContext } from
 
 function logJmapOutbound(accountId: string, message: string) {
   const logger = getJmapRuntime().logging?.getChildLogger?.({
-    channel: "jmap",
+    channel: "jmap-email",
     accountId,
   });
   logger?.info?.(message);
@@ -34,7 +34,7 @@ async function resolveClient(params: {
   const account = resolveJmapAccount({ cfg, accountId: params.accountId });
   if (!account.configured || !account.token.trim()) {
     throw new Error(
-      `JMAP is not configured for account "${account.accountId}" (set channels.jmap.apiToken/apiTokenFile or JMAP_API_TOKEN/JMAIL_API_TOKEN).`,
+      `JMAP is not configured for account "${account.accountId}" (set channels.jmap-email.apiToken/apiTokenFile or JMAP_API_TOKEN/JMAIL_API_TOKEN).`,
     );
   }
 
@@ -91,7 +91,7 @@ export async function sendJmapReplyToThread(params: {
     `outbound thread reply sent thread=${threadId} messageId=${result.messageId} target=${context.replyTo.map((x) => x.email).join(",") || context.from.map((x) => x.email).join(",") || context.to.map((x) => x.email).join(",")}`,
   );
   getJmapRuntime().channel.activity.record({
-    channel: "jmap",
+    channel: "jmap-email",
     accountId: state.mailAccountId,
     direction: "outbound",
   });
@@ -115,7 +115,7 @@ export async function sendJmapMessageToAddress(params: {
     `outbound direct sent to=${params.toEmail} messageId=${result.messageId}`,
   );
   getJmapRuntime().channel.activity.record({
-    channel: "jmap",
+    channel: "jmap-email",
     accountId: client.state.mailAccountId,
     direction: "outbound",
   });

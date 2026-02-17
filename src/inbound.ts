@@ -11,7 +11,7 @@ import { getJmapRuntime } from "./runtime.js";
 import { sendJmapReplyToThread } from "./send.js";
 import { resolveThreadSession } from "./thread-session.js";
 
-const CHANNEL_ID = "jmap" as const;
+const CHANNEL_ID = "jmap-email" as const;
 
 function normalizeAllowFrom(entries?: string[]): string[] {
   return (entries ?? []).map((entry) => entry.trim().toLowerCase()).filter(Boolean);

@@ -226,7 +226,7 @@ describe("monitorJmapProvider polling chain", () => {
 
     expect(activityRecord).toHaveBeenCalledTimes(1);
     expect(activityRecord).toHaveBeenCalledWith({
-      channel: "jmap",
+      channel: "jmap-email",
       accountId: "default",
       direction: "inbound",
       at: expect.any(Number),

@@ -4,8 +4,8 @@ import { jmapPlugin } from "./src/channel.js";
 import { setJmapRuntime } from "./src/runtime.js";
 
 const plugin = {
-  id: "jmap",
-  name: "JMAP",
+  id: "jmap-email",
+  name: "JMAP Email",
   description: "JMAP email channel plugin",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {

@@ -1,7 +1,7 @@
 {
-  "name": "@openclaw/jmap",
+  "name": "openclaw-channel-jmap-email",
   "version": "2026.2.15",
-  "description": "OpenClaw JMAP email channel plugin",
+  "description": "JMAP email channel plugin for OpenClaw",
   "type": "module",
   "devDependencies": {
     "openclaw": "workspace:*"
@@ -11,22 +11,22 @@
       "./index.ts"
     ],
     "channel": {
-      "id": "jmap",
-      "label": "JMAP",
+      "id": "jmap-email",
+      "label": "JMAP Email",
       "selectionLabel": "JMAP Email",
-      "docsPath": "/channels/jmap",
-      "docsLabel": "jmap",
+      "docsPath": "/channels/jmap-email",
+      "docsLabel": "jmap-email",
       "blurb": "Email thread conversations over JMAP.",
       "aliases": [
+        "jmap",
         "jmail"
       ],
       "order": 85,
       "quickstartAllowFrom": true
     },
     "install": {
-      "npmSpec": "@openclaw/jmap",
       "localPath": "extensions/jmap",
-      "defaultChoice": "npm"
+      "defaultChoice": "git"
     }
   }
 }

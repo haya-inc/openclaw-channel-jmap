@@ -41,7 +41,7 @@ export type JmapConfig = {
 
 export type CoreConfig = {
   channels?: {
-    jmap?: JmapConfig;
+    "jmap-email"?: JmapConfig;
   };
   commands?: {
     useAccessGroups?: boolean;

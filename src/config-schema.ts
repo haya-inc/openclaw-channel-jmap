@@ -36,7 +36,7 @@ export const JmapAccountSchema = JmapAccountSchemaBase.superRefine((value, ctx) 
     allowFrom: value.allowFrom,
     ctx,
     path: ["allowFrom"],
-    message: 'channels.jmap.dmPolicy="open" requires channels.jmap.allowFrom to include "*"',
+    message: 'channels.jmap-email.dmPolicy="open" requires channels.jmap-email.allowFrom to include "*"',
   });
 });
 
@@ -48,6 +48,6 @@ export const JmapConfigSchema = JmapAccountSchemaBase.extend({
     allowFrom: value.allowFrom,
     ctx,
     path: ["allowFrom"],
-    message: 'channels.jmap.dmPolicy="open" requires channels.jmap.allowFrom to include "*"',
+    message: 'channels.jmap-email.dmPolicy="open" requires channels.jmap-email.allowFrom to include "*"',
   });
 });

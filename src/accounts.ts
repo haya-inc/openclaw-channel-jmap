@@ -26,7 +26,7 @@ function normalizePollInterval(raw?: number): number {
 }
 
 function listConfiguredAccountIds(cfg: CoreConfig): string[] {
-  const accounts = cfg.channels?.jmap?.accounts;
+  const accounts = cfg.channels?.["jmap-email"]?.accounts;
   if (!accounts || typeof accounts !== "object") {
     return [];
   }
@@ -40,7 +40,7 @@ function listConfiguredAccountIds(cfg: CoreConfig): string[] {
 }
 
 function resolveAccountConfig(cfg: CoreConfig, accountId: string): JmapAccountConfig | undefined {
-  const accounts = cfg.channels?.jmap?.accounts;
+  const accounts = cfg.channels?.["jmap-email"]?.accounts;
   if (!accounts || typeof accounts !== "object") {
     return undefined;
   }
@@ -54,7 +54,7 @@ function resolveAccountConfig(cfg: CoreConfig, accountId: string): JmapAccountCo
 }
 
 function mergeJmapAccountConfig(cfg: CoreConfig, accountId: string): JmapAccountConfig {
-  const { accounts: _ignored, ...base } = (cfg.channels?.jmap ?? {}) as JmapAccountConfig & {
+  const { accounts: _ignored, ...base } = (cfg.channels?.["jmap-email"] ?? {}) as JmapAccountConfig & {
     accounts?: unknown;
   };
   const account = resolveAccountConfig(cfg, accountId) ?? {};
@@ -98,7 +98,7 @@ function resolveToken(
 }
 
 function hasTopLevelTokenConfig(cfg: CoreConfig): boolean {
-  const jmap = cfg.channels?.jmap;
+  const jmap = cfg.channels?.["jmap-email"];
   if (!jmap) {
     return false;
   }
@@ -129,7 +129,7 @@ export function resolveJmapAccount(params: {
   accountId?: string | null;
 }): JmapResolvedAccount {
   const hasExplicitAccountId = Boolean(params.accountId?.trim());
-  const baseEnabled = params.cfg.channels?.jmap?.enabled !== false;
+  const baseEnabled = params.cfg.channels?.["jmap-email"]?.enabled !== false;
 
   const resolve = (accountId: string): JmapResolvedAccount => {
     const merged = mergeJmapAccountConfig(params.cfg, accountId);

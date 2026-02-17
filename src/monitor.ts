@@ -51,7 +51,7 @@ async function pollLoop(params: {
   const { client, account, config, abortSignal, statusSink } = params;
   const runtimeCore = getJmapRuntime();
   const runtime = getJmapRuntime().logging.getChildLogger({
-    channel: "jmap",
+    channel: "jmap-email",
     accountId: account.accountId,
   });
   const deduper = await createJmapInboundDeduper({
@@ -117,7 +117,7 @@ async function pollLoop(params: {
       });
 
       runtimeCore.channel.activity.record({
-        channel: "jmap",
+        channel: "jmap-email",
         accountId: account.accountId,
         direction: "inbound",
         at: inbound.timestampMs,
@@ -227,7 +227,7 @@ export async function monitorJmapProvider(opts: JmapMonitorOptions): Promise<{ s
   const init = await client.init();
   core.logging
     .getChildLogger({
-      channel: "jmap",
+      channel: "jmap-email",
       accountId: account.accountId,
     })
     .info(
@@ -254,7 +254,7 @@ export async function monitorJmapProvider(opts: JmapMonitorOptions): Promise<{ s
     statusSink: opts.statusSink,
   }).catch((error) => {
     const logger = core.logging.getChildLogger({
-      channel: "jmap",
+      channel: "jmap-email",
       accountId: account.accountId,
     });
     logger.error(`monitor loop exited: ${formatError(error)}`);

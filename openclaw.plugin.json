@@ -1,6 +1,6 @@
 {
-  "id": "jmap",
-  "channels": ["jmap"],
+  "id": "jmap-email",
+  "channels": ["jmap-email"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
