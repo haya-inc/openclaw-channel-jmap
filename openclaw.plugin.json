@@ -27,11 +27,13 @@
   },
   "contracts": {
     "tools": [
+      "jmap_mail_mailboxes",
       "jmap_mail_search",
       "jmap_mail_get",
       "jmap_mail_thread",
       "jmap_mail_send",
-      "jmap_mail_update"
+      "jmap_mail_update",
+      "jmap_mail_move"
     ]
   },
   "configSchema": {

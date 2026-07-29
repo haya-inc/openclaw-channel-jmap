@@ -3,10 +3,13 @@ import type {
   JmapEmailAddress,
   JmapIdentity,
   JmapMailbox,
+  JmapMoveResult,
   JmapQueryChangesResult,
   JmapSearchParams,
+  JmapSearchPage,
   JmapSendResult,
   JmapThreadContext,
+  JmapThreadPage,
 } from "./types.js";
 import {
   buildThreadContextFromEmail,
@@ -19,7 +22,24 @@ import {
   pickIdentity,
 } from "./jmap-email.js";
 import { normalizeEmailAddress } from "./normalize.js";
-import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "./types.js";
+import {
+  DEFAULT_MAX_BODY_BYTES,
+  JMAP_CORE,
+  JMAP_MAIL,
+  JMAP_SUBMISSION,
+} from "./types.js";
+
+const SAFETY_HEADER_PROPERTIES = [
+  "header:Auto-Submitted:asText",
+  "header:Precedence:asText",
+  "header:List-Id:asText",
+  "header:List-Unsubscribe:asText",
+  "header:List-Post:asText",
+  "header:List-Help:asText",
+  "header:Return-Path:asText",
+  "header:X-Auto-Response-Suppress:asText",
+  "header:Content-Type:asText",
+] as const;
 
 type JmapMethodCallArgs = Record<string, unknown>;
 type JmapMethodCall = [string, JmapMethodCallArgs, string];
@@ -318,11 +338,45 @@ export class JmapClient {
     };
   }
 
-  async getEmails(ids: string[]): Promise<JmapEmail[]> {
+  listMailboxes(): JmapMailbox[] {
+    return this.state.mailboxes
+      .map((mailbox) => ({ ...mailbox, myRights: mailbox.myRights ? { ...mailbox.myRights } : undefined }))
+      .sort((left, right) => {
+        const order = (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+        return order || (left.name ?? "").localeCompare(right.name ?? "");
+      });
+  }
+
+  resolveMailbox(reference?: string | null): JmapMailbox | undefined {
+    const raw = reference?.trim() || "inbox";
+    if (raw.toLowerCase() === "all") {
+      return undefined;
+    }
+    const normalized = raw.toLocaleLowerCase();
+    const mailbox = this.state.mailboxes.find(
+      (candidate) =>
+        candidate.id === raw ||
+        candidate.role?.toLocaleLowerCase() === normalized ||
+        candidate.name?.toLocaleLowerCase() === normalized,
+    );
+    if (!mailbox) {
+      throw new Error(`JMAP mailbox not found by id, role, or name: ${raw}`);
+    }
+    return mailbox;
+  }
+
+  async getEmails(
+    ids: string[],
+    options?: { maxBodyValueBytes?: number },
+  ): Promise<JmapEmail[]> {
     if (ids.length === 0) {
       return [];
     }
     const state = this.state;
+    const maxBodyValueBytes = Math.max(
+      1_000,
+      Math.min(1_000_000, Math.trunc(options?.maxBodyValueBytes ?? DEFAULT_MAX_BODY_BYTES)),
+    );
     const result = await this.callMethod("Email/get", {
       accountId: state.mailAccountId,
       ids,
@@ -344,15 +398,16 @@ export class JmapClient {
         "references",
         "textBody",
         "htmlBody",
+        "attachments",
+        "hasAttachment",
         "bodyValues",
         "keywords",
         "size",
-        "header:Auto-Submitted:asText",
-        "header:Precedence:asText",
-        "header:List-Id:asText",
+        ...SAFETY_HEADER_PROPERTIES,
       ],
       fetchTextBodyValues: true,
-      fetchHTMLBodyValues: false,
+      fetchHTMLBodyValues: true,
+      maxBodyValueBytes,
     });
 
     return ensureArray(result.list as JmapEmail[]).filter((item) => item.id);
@@ -382,11 +437,11 @@ export class JmapClient {
         "messageId",
         "inReplyTo",
         "references",
+        "attachments",
+        "hasAttachment",
         "keywords",
         "size",
-        "header:Auto-Submitted:asText",
-        "header:Precedence:asText",
-        "header:List-Id:asText",
+        ...SAFETY_HEADER_PROPERTIES,
       ],
       fetchTextBodyValues: false,
       fetchHTMLBodyValues: false,
@@ -396,43 +451,94 @@ export class JmapClient {
   }
 
   async searchEmails(params: JmapSearchParams = {}): Promise<JmapEmail[]> {
+    return (await this.searchEmailPage(params)).emails;
+  }
+
+  async searchEmailPage(params: JmapSearchParams = {}): Promise<JmapSearchPage> {
     const state = this.state;
     const limit = Math.max(1, Math.min(100, Math.trunc(params.limit ?? 20)));
+    const position = Math.max(0, Math.trunc(params.position ?? 0));
     const requestedSubject = params.subject?.trim() || undefined;
+    const mailbox = this.resolveMailbox(params.mailbox);
+    const explicitHasKeyword = params.hasKeyword?.trim() || undefined;
+    const explicitNotKeyword = params.notKeyword?.trim() || undefined;
     const filter = compact({
-      inMailbox: state.inboxMailboxId,
+      inMailbox: mailbox?.id,
       text: params.text?.trim() || undefined,
       from: params.from?.trim() || undefined,
       to: params.to?.trim() || undefined,
       subject: requestedSubject,
       after: params.after?.trim() || undefined,
       before: params.before?.trim() || undefined,
-      hasKeyword: params.unread === false ? "$seen" : undefined,
-      notKeyword: params.unread === true ? "$seen" : undefined,
+      minSize:
+        typeof params.minSize === "number" && Number.isFinite(params.minSize)
+          ? Math.max(0, Math.trunc(params.minSize))
+          : undefined,
+      maxSize:
+        typeof params.maxSize === "number" && Number.isFinite(params.maxSize)
+          ? Math.max(0, Math.trunc(params.maxSize))
+          : undefined,
+      hasAttachment:
+        typeof params.hasAttachment === "boolean" ? params.hasAttachment : undefined,
+      hasKeyword: explicitHasKeyword ?? (params.unread === false ? "$seen" : undefined),
+      notKeyword: explicitNotKeyword ?? (params.unread === true ? "$seen" : undefined),
     });
 
     const queryIds = async (
       queryFilter: Record<string, unknown>,
       queryLimit: number,
-    ): Promise<string[]> => {
+      queryPosition: number,
+      calculateTotal: boolean,
+    ): Promise<{
+      ids: string[];
+      queryState: string;
+      canCalculateChanges: boolean;
+      total?: number;
+      position: number;
+    }> => {
       const result = await this.callMethod("Email/query", {
         accountId: state.mailAccountId,
         filter: queryFilter,
         sort: [{ property: "receivedAt", isAscending: false }],
-        calculateTotal: false,
-        position: 0,
+        collapseThreads: params.collapseThreads === true,
+        calculateTotal,
+        position: queryPosition,
         limit: queryLimit,
       });
-      return ensureArray(result.ids as string[])
-        .map((id) => id.trim())
-        .filter(Boolean);
+      return {
+        ids: ensureArray(result.ids as string[])
+          .map((id) => id.trim())
+          .filter(Boolean),
+        queryState: String(result.queryState ?? "").trim(),
+        canCalculateChanges: result.canCalculateChanges === true,
+        total: typeof result.total === "number" ? result.total : undefined,
+        position:
+          typeof result.position === "number" && Number.isFinite(result.position)
+            ? Math.max(0, Math.trunc(result.position))
+            : queryPosition,
+      };
     };
 
-    const ids = await queryIds(filter, limit);
+    const query = await queryIds(filter, limit, position, true);
+    const ids = query.ids;
     if (ids.length > 0 || !requestedSubject) {
       const emails = await this.getEmailMetadata(ids);
       const byId = new Map(emails.map((email) => [email.id, email]));
-      return ids.map((id) => byId.get(id)).filter((email): email is JmapEmail => Boolean(email));
+      const ordered = ids
+        .map((id) => byId.get(id))
+        .filter((email): email is JmapEmail => Boolean(email));
+      const nextPosition =
+        ordered.length === limit && (query.total === undefined || position + ordered.length < query.total)
+          ? position + ordered.length
+          : undefined;
+      return {
+        emails: ordered,
+        queryState: query.queryState,
+        canCalculateChanges: query.canCalculateChanges,
+        position: query.position,
+        total: query.total,
+        nextPosition,
+      };
     }
 
     // A server can return no matches for a standards-compliant subject filter
@@ -451,22 +557,41 @@ export class JmapClient {
 
     const normalizedSubject = normalizeSubjectForComparison(requestedSubject);
     for (const fallbackFilter of fallbackFilters) {
-      const fallbackIds = await queryIds(fallbackFilter, 100);
-      const candidates = await this.getEmailMetadata(fallbackIds);
+      const fallbackQuery = await queryIds(fallbackFilter, 100, 0, false);
+      const candidates = await this.getEmailMetadata(fallbackQuery.ids);
       const matches = candidates
         .filter((email) =>
           normalizeSubjectForComparison(email.subject).includes(normalizedSubject),
         )
         .slice(0, limit);
       if (matches.length > 0) {
-        return matches;
+        return {
+          emails: matches,
+          queryState: query.queryState,
+          canCalculateChanges: query.canCalculateChanges,
+          position: 0,
+          total: matches.length,
+        };
       }
     }
 
-    return [];
+    return {
+      emails: [],
+      queryState: query.queryState,
+      canCalculateChanges: query.canCalculateChanges,
+      position: query.position,
+      total: 0,
+    };
   }
 
   async getThreadEmails(threadId: string): Promise<JmapEmail[]> {
+    return (await this.getThreadPage(threadId, { limit: 100, offset: 0 })).emails;
+  }
+
+  async getThreadPage(
+    threadId: string,
+    params?: { limit?: number; offset?: number; maxBodyValueBytes?: number },
+  ): Promise<JmapThreadPage> {
     const normalizedThreadId = threadId.trim();
     if (!normalizedThreadId) {
       throw new Error("JMAP thread id is required");
@@ -479,10 +604,28 @@ export class JmapClient {
       result.list as Array<{ id: string; emailIds?: string[] }>,
     ).find((entry) => entry.id === normalizedThreadId);
     if (!thread) {
-      return [];
+      return { emails: [], total: 0, offset: 0 };
     }
-    const emails = await this.getEmails(ensureArray(thread.emailIds));
-    return emails.sort((a, b) => parseTimestampMs(a) - parseTimestampMs(b));
+    const emailIds = ensureArray(thread.emailIds);
+    const limit = Math.max(1, Math.min(100, Math.trunc(params?.limit ?? 20)));
+    const offset = Math.max(0, Math.trunc(params?.offset ?? 0));
+    const end = Math.max(0, emailIds.length - offset);
+    const start = Math.max(0, end - limit);
+    const selectedIds = emailIds.slice(start, end);
+    const emails = await this.getEmails(selectedIds, {
+      maxBodyValueBytes: params?.maxBodyValueBytes,
+    });
+    const byId = new Map(emails.map((email) => [email.id, email]));
+    const ordered = selectedIds
+      .map((id) => byId.get(id))
+      .filter((email): email is JmapEmail => Boolean(email))
+      .sort((left, right) => parseTimestampMs(left) - parseTimestampMs(right));
+    return {
+      emails: ordered,
+      total: emailIds.length,
+      offset,
+      nextOffset: start > 0 ? offset + selectedIds.length : undefined,
+    };
   }
 
   async probeEmailMetadata(): Promise<JmapMetadataProbe> {
@@ -569,10 +712,82 @@ export class JmapClient {
     if (Object.keys(patch).length === 0) {
       throw new Error("No JMAP keyword changes were requested");
     }
-    await this.callMethod("Email/set", {
+    const result = await this.callMethod("Email/set", {
       accountId: this.state.mailAccountId,
       update: Object.fromEntries(validIds.map((id) => [id, patch])),
     });
+    const notUpdated = result.notUpdated as
+      | Record<string, { type?: string; description?: string }>
+      | undefined;
+    const failedId = validIds.find((id) => notUpdated?.[id]);
+    if (failedId) {
+      const failure = notUpdated?.[failedId];
+      throw new JmapMethodError(
+        failure?.type?.trim() || "notUpdated",
+        failure?.description?.trim() || `JMAP Email/set did not update email ${failedId}`,
+      );
+    }
+  }
+
+  async moveEmails(ids: string[], destinationReference: string): Promise<JmapMoveResult> {
+    const validIds = ids.map((id) => id.trim()).filter(Boolean);
+    if (validIds.length === 0) {
+      throw new Error("At least one JMAP email id is required");
+    }
+    const destination = this.resolveMailbox(destinationReference);
+    if (!destination) {
+      throw new Error("A concrete destination mailbox is required");
+    }
+    if (destination.myRights?.mayAddItems === false) {
+      throw new Error(`JMAP mailbox does not allow adding email: ${destination.name ?? destination.id}`);
+    }
+    const emailMetadata = await this.getEmailMetadata(validIds);
+    const metadataById = new Map(emailMetadata.map((email) => [email.id, email]));
+    const missingIds = validIds.filter((id) => !metadataById.has(id));
+    if (missingIds.length > 0) {
+      throw new Error(`JMAP email not found: ${missingIds.join(", ")}`);
+    }
+    const mailboxById = new Map(this.state.mailboxes.map((mailbox) => [mailbox.id, mailbox]));
+    const previous = validIds.map((emailId) => ({
+      emailId,
+      mailboxes: Object.entries(metadataById.get(emailId)?.mailboxIds ?? {})
+        .filter(([, present]) => present)
+        .map(([mailboxId]) => mailboxById.get(mailboxId))
+        .filter((mailbox): mailbox is JmapMailbox => Boolean(mailbox)),
+    }));
+    const nonRemovable = previous
+      .flatMap((entry) => entry.mailboxes)
+      .find((mailbox) => mailbox.myRights?.mayRemoveItems === false);
+    if (nonRemovable) {
+      throw new Error(
+        `JMAP mailbox does not allow removing email: ${nonRemovable.name ?? nonRemovable.id}`,
+      );
+    }
+    const result = await this.callMethod("Email/set", {
+      accountId: this.state.mailAccountId,
+      update: Object.fromEntries(
+        validIds.map((id) => [
+          id,
+          {
+            mailboxIds: {
+              [destination.id]: true,
+            },
+          },
+        ]),
+      ),
+    });
+    const notUpdated = result.notUpdated as
+      | Record<string, { type?: string; description?: string }>
+      | undefined;
+    const failedId = validIds.find((id) => notUpdated?.[id]);
+    if (failedId) {
+      const failure = notUpdated?.[failedId];
+      throw new JmapMethodError(
+        failure?.type?.trim() || "notUpdated",
+        failure?.description?.trim() || `JMAP Email/set did not move email ${failedId}`,
+      );
+    }
+    return { destination, previous };
   }
 
   async getThreadContext(threadId: string): Promise<JmapThreadContext | null> {
@@ -885,7 +1100,19 @@ export class JmapClient {
         {
           accountId,
           ids: null,
-          properties: ["id", "role", "name", "myRights"],
+          properties: [
+            "id",
+            "name",
+            "parentId",
+            "role",
+            "sortOrder",
+            "totalEmails",
+            "unreadEmails",
+            "totalThreads",
+            "unreadThreads",
+            "myRights",
+            "isSubscribed",
+          ],
         },
         "mailbox-get",
       ],

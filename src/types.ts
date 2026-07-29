@@ -84,6 +84,13 @@ export type JmapMailbox = {
   id: string;
   role?: JmapMailboxRole;
   name?: string;
+  parentId?: string | null;
+  sortOrder?: number;
+  totalEmails?: number;
+  unreadEmails?: number;
+  totalThreads?: number;
+  unreadThreads?: number;
+  isSubscribed?: boolean;
   myRights?: {
     mayReadItems?: boolean;
     mayAddItems?: boolean;
@@ -104,7 +111,16 @@ export type JmapEmailAddress = {
 
 export type JmapBodyPartRef = {
   partId?: string;
+  blobId?: string;
+  size?: number;
+  name?: string | null;
   type?: string;
+  charset?: string | null;
+  disposition?: string | null;
+  cid?: string | null;
+  language?: string[] | null;
+  location?: string | null;
+  subParts?: JmapBodyPartRef[];
 };
 
 export type JmapBodyValue = {
@@ -131,11 +147,19 @@ export type JmapEmail = {
   bodyValues?: Record<string, JmapBodyValue>;
   textBody?: JmapBodyPartRef[];
   htmlBody?: JmapBodyPartRef[];
+  attachments?: JmapBodyPartRef[];
+  hasAttachment?: boolean;
   keywords?: Record<string, boolean>;
   size?: number;
   "header:Auto-Submitted:asText"?: string;
   "header:Precedence:asText"?: string;
   "header:List-Id:asText"?: string;
+  "header:List-Unsubscribe:asText"?: string;
+  "header:List-Post:asText"?: string;
+  "header:List-Help:asText"?: string;
+  "header:Return-Path:asText"?: string;
+  "header:X-Auto-Response-Suppress:asText"?: string;
+  "header:Content-Type:asText"?: string;
 };
 
 export type JmapIdentity = {
@@ -191,6 +215,11 @@ export type JmapSendResult = {
 };
 
 export type JmapSearchParams = {
+  /**
+   * Mailbox id, role, or exact display name. "all" searches every readable
+   * mailbox. Defaults to "inbox".
+   */
+  mailbox?: string;
   text?: string;
   from?: string;
   to?: string;
@@ -198,5 +227,42 @@ export type JmapSearchParams = {
   after?: string;
   before?: string;
   unread?: boolean;
+  hasAttachment?: boolean;
+  minSize?: number;
+  maxSize?: number;
+  hasKeyword?: string;
+  notKeyword?: string;
+  collapseThreads?: boolean;
+  position?: number;
   limit?: number;
+};
+
+export type JmapSearchPage = {
+  emails: JmapEmail[];
+  queryState: string;
+  canCalculateChanges: boolean;
+  position: number;
+  total?: number;
+  nextPosition?: number;
+};
+
+export type JmapThreadPage = {
+  emails: JmapEmail[];
+  total: number;
+  offset: number;
+  nextOffset?: number;
+};
+
+export type JmapMoveResult = {
+  destination: JmapMailbox;
+  previous: Array<{
+    emailId: string;
+    mailboxes: JmapMailbox[];
+  }>;
+};
+
+export type JmapAutomationClassification = {
+  automated: boolean;
+  suppressReply: boolean;
+  reasons: string[];
 };

@@ -1,7 +1,11 @@
 import { Type } from "@sinclair/typebox";
 import { jsonResult, type AnyAgentTool } from "openclaw/plugin-sdk/core";
 import { resolveJmapAccount } from "./accounts.js";
-import { extractTextFromEmail } from "./jmap-email.js";
+import {
+  classifyEmailAutomation,
+  extractLinksFromEmail,
+  extractTextFromEmail,
+} from "./jmap-email.js";
 import { JmapClient } from "./jmap-client.js";
 import { getJmapRuntime } from "./runtime.js";
 import { sendJmapMessageToAddress, sendJmapReplyToThread } from "./send.js";
@@ -11,7 +15,12 @@ import {
   recordJmapToolSucceeded,
 } from "./status.js";
 import { getJmapClient, setJmapClient } from "./store.js";
-import type { CoreConfig, JmapEmail, JmapResolvedAccount } from "./types.js";
+import type {
+  CoreConfig,
+  JmapEmail,
+  JmapMailbox,
+  JmapResolvedAccount,
+} from "./types.js";
 import { DEFAULT_MAX_BODY_BYTES } from "./types.js";
 
 const SAFETY_NOTICE =
@@ -96,11 +105,34 @@ function truncateBody(value: string, maxBytes: number): { body: string; truncate
 
 function emailResult(
   email: JmapEmail,
-  options: { includeBody: boolean; maxBodyBytes: number },
+  options: {
+    includeBody: boolean;
+    maxBodyBytes: number;
+    mailboxes?: JmapMailbox[];
+  },
 ) {
   const body = options.includeBody
     ? truncateBody(extractTextFromEmail(email), options.maxBodyBytes)
     : undefined;
+  const mailboxById = new Map((options.mailboxes ?? []).map((mailbox) => [mailbox.id, mailbox]));
+  const mailboxes = Object.entries(email.mailboxIds ?? {})
+    .filter(([, present]) => present)
+    .map(([id]) => {
+      const mailbox = mailboxById.get(id);
+      return {
+        id,
+        name: mailbox?.name ?? "",
+        role: mailbox?.role ?? null,
+      };
+    });
+  const attachments = (email.attachments ?? []).map((attachment) => ({
+    blobId: attachment.blobId,
+    name: attachment.name ?? null,
+    type: attachment.type ?? "application/octet-stream",
+    size: attachment.size,
+    disposition: attachment.disposition ?? null,
+    cid: attachment.cid ?? null,
+  }));
   return {
     id: email.id,
     threadId: email.threadId,
@@ -114,7 +146,16 @@ function emailResult(
     sentAt: email.sentAt,
     size: email.size,
     keywords: email.keywords ?? {},
-    ...(body ? body : {}),
+    mailboxes,
+    hasAttachment: email.hasAttachment ?? attachments.length > 0,
+    attachments,
+    automation: classifyEmailAutomation(email),
+    ...(body
+      ? {
+          ...body,
+          links: extractLinksFromEmail(email),
+        }
+      : {}),
   };
 }
 
@@ -160,13 +201,41 @@ async function runAuditedJmapTool<T>(
 export function createJmapTools(): AnyAgentTool[] {
   return [
     {
-      name: "jmap_mail_search",
-      label: "Search JMAP mail",
+      name: "jmap_mail_mailboxes",
+      label: "List JMAP mailboxes",
       description:
-        "Search the inbox using JMAP filters. Returns message metadata and previews, not full bodies.",
+        "List readable JMAP mailboxes with roles, message counts, and mailbox rights. This has no side effect.",
       parameters: Type.Object(
         {
           accountId: accountIdParam,
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (_toolCallId, rawParams) => {
+        const params = rawParams as Record<string, unknown>;
+        return runAuditedJmapTool("jmap_mail_mailboxes", params, async () => {
+          const { account, client } = await resolveClient(optionalString(params.accountId));
+          return jsonResult({
+            accountId: account.accountId,
+            mailboxes: client.listMailboxes(),
+          });
+        });
+      },
+    },
+    {
+      name: "jmap_mail_search",
+      label: "Search JMAP mail",
+      description:
+        "Search a selected mailbox or all readable mail using JMAP filters. Returns message metadata, pagination, and previews, not full bodies.",
+      parameters: Type.Object(
+        {
+          accountId: accountIdParam,
+          mailbox: Type.Optional(
+            Type.String({
+              description:
+                "Mailbox id, role, or exact name. Use 'all' for every readable mailbox. Default inbox.",
+            }),
+          ),
           text: Type.Optional(Type.String({ description: "Full-text search query." })),
           from: Type.Optional(Type.String({ description: "Sender address or name filter." })),
           to: Type.Optional(Type.String({ description: "Recipient address or name filter." })),
@@ -178,6 +247,27 @@ export function createJmapTools(): AnyAgentTool[] {
             Type.String({ description: "RFC 3339 upper time bound, for example 2026-08-01T00:00:00Z." }),
           ),
           unread: Type.Optional(Type.Boolean({ description: "True for unread, false for read." })),
+          hasAttachment: Type.Optional(
+            Type.Boolean({ description: "Filter by whether the email has an attachment." }),
+          ),
+          minSize: Type.Optional(
+            Type.Integer({ minimum: 0, description: "Minimum email size in bytes." }),
+          ),
+          maxSize: Type.Optional(
+            Type.Integer({ minimum: 0, description: "Exclusive maximum email size in bytes." }),
+          ),
+          hasKeyword: Type.Optional(
+            Type.String({ description: "Require a JMAP keyword, for example $answered." }),
+          ),
+          notKeyword: Type.Optional(
+            Type.String({ description: "Exclude a JMAP keyword, for example $draft." }),
+          ),
+          collapseThreads: Type.Optional(
+            Type.Boolean({ description: "Return at most one email per thread. Default false." }),
+          ),
+          position: Type.Optional(
+            Type.Integer({ minimum: 0, description: "Zero-based result position. Default 0." }),
+          ),
           limit: Type.Optional(
             Type.Integer({ minimum: 1, maximum: 100, description: "Maximum results. Default 20." }),
           ),
@@ -188,7 +278,8 @@ export function createJmapTools(): AnyAgentTool[] {
         const params = rawParams as Record<string, unknown>;
         return runAuditedJmapTool("jmap_mail_search", params, async () => {
           const { account, client } = await resolveClient(optionalString(params.accountId));
-          const emails = await client.searchEmails({
+          const page = await client.searchEmailPage({
+            mailbox: optionalString(params.mailbox),
             text: optionalString(params.text),
             from: optionalString(params.from),
             to: optionalString(params.to),
@@ -196,13 +287,31 @@ export function createJmapTools(): AnyAgentTool[] {
             after: optionalString(params.after),
             before: optionalString(params.before),
             unread: typeof params.unread === "boolean" ? params.unread : undefined,
+            hasAttachment:
+              typeof params.hasAttachment === "boolean" ? params.hasAttachment : undefined,
+            minSize: typeof params.minSize === "number" ? params.minSize : undefined,
+            maxSize: typeof params.maxSize === "number" ? params.maxSize : undefined,
+            hasKeyword: optionalString(params.hasKeyword),
+            notKeyword: optionalString(params.notKeyword),
+            collapseThreads:
+              typeof params.collapseThreads === "boolean" ? params.collapseThreads : undefined,
+            position: typeof params.position === "number" ? params.position : undefined,
             limit: typeof params.limit === "number" ? params.limit : undefined,
           });
           return jsonResult({
             safetyNotice: SAFETY_NOTICE,
             accountId: account.accountId,
-            emails: emails.map((email) =>
-              emailResult(email, { includeBody: false, maxBodyBytes: DEFAULT_MAX_BODY_BYTES }),
+            position: page.position,
+            total: page.total,
+            nextPosition: page.nextPosition,
+            queryState: page.queryState,
+            canCalculateChanges: page.canCalculateChanges,
+            emails: page.emails.map((email) =>
+              emailResult(email, {
+                includeBody: false,
+                maxBodyBytes: DEFAULT_MAX_BODY_BYTES,
+                mailboxes: client.listMailboxes(),
+              }),
             ),
           });
         });
@@ -227,7 +336,8 @@ export function createJmapTools(): AnyAgentTool[] {
         return runAuditedJmapTool("jmap_mail_get", params, async () => {
           const emailId = requiredString(params, "emailId");
           const { account, client } = await resolveClient(optionalString(params.accountId));
-          const email = (await client.getEmails([emailId]))[0];
+          const maxBodyBytes = account.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+          const email = (await client.getEmails([emailId], { maxBodyValueBytes: maxBodyBytes }))[0];
           if (!email) {
             throw new Error(`JMAP email not found: ${emailId}`);
           }
@@ -239,7 +349,8 @@ export function createJmapTools(): AnyAgentTool[] {
             accountId: account.accountId,
             email: emailResult(email, {
               includeBody: true,
-              maxBodyBytes: account.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+              maxBodyBytes,
+              mailboxes: client.listMailboxes(),
             }),
           });
         });
@@ -248,11 +359,26 @@ export function createJmapTools(): AnyAgentTool[] {
     {
       name: "jmap_mail_thread",
       label: "Read JMAP thread",
-      description: "Read a complete JMAP email thread in chronological order.",
+      description:
+        "Read a bounded page of a JMAP thread in chronological order, newest page first. Defaults to the latest 20 emails.",
       parameters: Type.Object(
         {
           accountId: accountIdParam,
           threadId: Type.String({ description: "JMAP Thread id." }),
+          limit: Type.Optional(
+            Type.Integer({
+              minimum: 1,
+              maximum: 100,
+              description: "Maximum emails to return. Default 20.",
+            }),
+          ),
+          offset: Type.Optional(
+            Type.Integer({
+              minimum: 0,
+              description:
+                "Number of newest emails to skip when reading an older page. Default 0.",
+            }),
+          ),
         },
         { additionalProperties: false },
       ),
@@ -261,15 +387,24 @@ export function createJmapTools(): AnyAgentTool[] {
         return runAuditedJmapTool("jmap_mail_thread", params, async () => {
           const threadId = requiredString(params, "threadId");
           const { account, client } = await resolveClient(optionalString(params.accountId));
-          const emails = await client.getThreadEmails(threadId);
+          const maxBodyBytes = account.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+          const page = await client.getThreadPage(threadId, {
+            limit: typeof params.limit === "number" ? params.limit : undefined,
+            offset: typeof params.offset === "number" ? params.offset : undefined,
+            maxBodyValueBytes: maxBodyBytes,
+          });
           return jsonResult({
             safetyNotice: SAFETY_NOTICE,
             accountId: account.accountId,
             threadId,
-            emails: emails.map((email) =>
+            total: page.total,
+            offset: page.offset,
+            nextOffset: page.nextOffset,
+            emails: page.emails.map((email) =>
               emailResult(email, {
                 includeBody: true,
-                maxBodyBytes: account.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+                maxBodyBytes,
+                mailboxes: client.listMailboxes(),
               }),
             ),
           });
@@ -342,13 +477,61 @@ export function createJmapTools(): AnyAgentTool[] {
         });
       },
     },
+    {
+      name: "jmap_mail_move",
+      label: "Move JMAP mail",
+      description:
+        "Move one or more emails exclusively into a destination mailbox selected by id, role, or exact name. This does not issue permanent deletion, but server retention may later purge Trash or Junk.",
+      parameters: Type.Object(
+        {
+          accountId: accountIdParam,
+          emailIds: Type.Array(Type.String(), {
+            minItems: 1,
+            maxItems: 100,
+            description: "JMAP Email ids.",
+          }),
+          destination: Type.String({
+            description: "Destination mailbox id, role, or exact name, for example trash or Junk Mail.",
+          }),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (_toolCallId, rawParams) => {
+        const params = rawParams as Record<string, unknown>;
+        return runAuditedJmapTool("jmap_mail_move", params, async () => {
+          const emailIds = readEmailIds(params);
+          const destination = requiredString(params, "destination");
+          const { account, client } = await resolveClient(optionalString(params.accountId));
+          const result = await client.moveEmails(emailIds, destination);
+          return jsonResult({
+            accountId: account.accountId,
+            moved: emailIds,
+            destination: {
+              id: result.destination.id,
+              name: result.destination.name ?? "",
+              role: result.destination.role ?? null,
+            },
+            previous: result.previous.map((entry) => ({
+              emailId: entry.emailId,
+              mailboxes: entry.mailboxes.map((mailbox) => ({
+                id: mailbox.id,
+                name: mailbox.name ?? "",
+                role: mailbox.role ?? null,
+              })),
+            })),
+          });
+        });
+      },
+    },
   ];
 }
 
 export const JMAP_TOOL_NAMES = [
+  "jmap_mail_mailboxes",
   "jmap_mail_search",
   "jmap_mail_get",
   "jmap_mail_thread",
   "jmap_mail_send",
   "jmap_mail_update",
+  "jmap_mail_move",
 ] as const;

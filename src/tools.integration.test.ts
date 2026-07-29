@@ -97,8 +97,21 @@ describe("JMAP agent tools full chain", () => {
     await server.close();
   });
 
-  it("executes all five model-visible tools and records anonymous usage telemetry", async () => {
+  it("executes all seven model-visible tools and records anonymous usage telemetry", async () => {
     const tools = createJmapTools();
+
+    const mailboxes = await findTool(tools, "jmap_mail_mailboxes").execute(
+      "call-mailboxes",
+      {},
+    );
+    expect(mailboxes.details).toMatchObject({
+      accountId: "default",
+      mailboxes: [
+        { id: "mbox-inbox", role: "inbox" },
+        { id: "mbox-sent", role: "sent" },
+        { id: "mbox-drafts", role: "drafts" },
+      ],
+    });
 
     server.enqueueMethod("Email/query", {
       ids: ["mail-1"],
@@ -138,8 +151,22 @@ describe("JMAP agent tools full chain", () => {
           threadId: "thread-1",
           from: [{ email: "alice@example.com" }],
           subject: "Status",
-          textBody: [{ partId: "body-1", type: "text/plain" }],
-          bodyValues: { "body-1": { value: "Full body" } },
+          htmlBody: [{ partId: "body-1", type: "text/html" }],
+          bodyValues: {
+            "body-1": {
+              value:
+                '<p>Full body <a href="https://example.com/verify">verify</a></p>',
+            },
+          },
+          attachments: [
+            {
+              blobId: "blob-1",
+              name: "details.pdf",
+              type: "application/pdf",
+              size: 512,
+            },
+          ],
+          hasAttachment: true,
         },
       ],
     });
@@ -147,7 +174,21 @@ describe("JMAP agent tools full chain", () => {
       emailId: "mail-1",
     });
     expect(get.details).toMatchObject({
-      email: { id: "mail-1", body: "Full body", truncated: false },
+      email: {
+        id: "mail-1",
+        body: "Full body verify",
+        truncated: false,
+        links: ["https://example.com/verify"],
+        hasAttachment: true,
+        attachments: [
+          {
+            blobId: "blob-1",
+            name: "details.pdf",
+            type: "application/pdf",
+            size: 512,
+          },
+        ],
+      },
     });
 
     server.enqueueMethod("Thread/get", {
@@ -218,9 +259,43 @@ describe("JMAP agent tools full chain", () => {
       updated: ["mail-1"],
     });
 
+    server.enqueueMethod("Email/get", {
+      list: [{ id: "mail-1", mailboxIds: { "mbox-inbox": true } }],
+    });
+    server.enqueueMethod("Email/set", {
+      updated: {
+        "mail-1": null,
+      },
+    });
+    const move = await findTool(tools, "jmap_mail_move").execute("call-move", {
+      emailIds: ["mail-1"],
+      destination: "sent",
+    });
+    expect(move.details).toEqual({
+      accountId: "default",
+      moved: ["mail-1"],
+      destination: {
+        id: "mbox-sent",
+        name: "",
+        role: "sent",
+      },
+      previous: [
+        {
+          emailId: "mail-1",
+          mailboxes: [
+            {
+              id: "mbox-inbox",
+              name: "",
+              role: "inbox",
+            },
+          ],
+        },
+      ],
+    });
+
     expect(getJmapRuntimeStatus("default")).toMatchObject({
-      lastToolName: "jmap_mail_update",
-      toolCallCount: 5,
+      lastToolName: "jmap_mail_move",
+      toolCallCount: 7,
       toolErrorCount: 0,
       outboundCount: 1,
       lastOutboundAt: expect.any(Number),
@@ -230,7 +305,7 @@ describe("JMAP agent tools full chain", () => {
       info.mock.calls.filter(([line]) =>
         String(line).startsWith("tool invocation succeeded name=jmap_mail_"),
       ),
-    ).toHaveLength(5);
+    ).toHaveLength(7);
     expect(server.pendingResponses).toBe(0);
   });
 });

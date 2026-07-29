@@ -3,6 +3,13 @@
 `openclaw-channel-jmap` determines compatibility from the live JMAP Session
 resource and safe method calls. A server name never bypasses a check.
 
+Every report also contains an RFC 8621 matrix for all 26 standard methods. Each
+row separates the plugin's `implemented`, `partial`, or `planned` state from the
+server's `verified`, `advertised`, `unsupported`, or `unverified` state.
+`advertised` is intentionally weaker than `verified`: it means the relevant
+Mail or Submission capability is present, but the safe probe did not invoke
+that method.
+
 Supported report profiles:
 
 - `stalwart`
@@ -105,7 +112,9 @@ These levels are deliberately not called vendor certification. A lab result
 proves interoperability with the named artifact and configuration; a live
 result additionally covers the deployed service, authentication, and network
 path. Neither proves outbound delivery because the standard probe has no side
-effects.
+effects. State-changing and outbound methods can only advance from `advertised`
+to `verified` in a separately authorized disposable lab. Live safe probes never
+change those rows by mutating a real mailbox.
 
 GitHub Actions retains the report and evidence wrapper together. Reviewed
 snapshots may be promoted into

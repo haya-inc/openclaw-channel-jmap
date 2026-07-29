@@ -150,6 +150,30 @@ describe("JMAP compatibility profiles", () => {
       attachmentDownload: "advertised",
       attachmentUpload: "advertised",
     });
+    expect(report.rfc8621).toMatchObject({
+      pluginRelease: "0.4.0",
+      totalMethods: 26,
+    });
+    expect(report.rfc8621.methods).toHaveLength(26);
+    expect(report.rfc8621.methods).toEqual(
+      expect.arrayContaining([
+        {
+          method: "Mailbox/get",
+          pluginStatus: "implemented",
+          serverStatus: "verified",
+        },
+        {
+          method: "Email/queryChanges",
+          pluginStatus: "partial",
+          serverStatus: "verified",
+        },
+        {
+          method: "VacationResponse/set",
+          pluginStatus: "planned",
+          serverStatus: "advertised",
+        },
+      ]),
+    );
     expect(report.probePolicy).toEqual({
       sideEffectsPerformed: false,
       messageBodiesRead: false,
@@ -255,6 +279,12 @@ describe("JMAP compatibility profiles", () => {
       status: "fail",
       required: false,
       code: "jmap-unknownmethod",
+    });
+    expect(
+      report.rfc8621.methods.find((entry) => entry.method === "Email/queryChanges"),
+    ).toMatchObject({
+      pluginStatus: "partial",
+      serverStatus: "unsupported",
     });
     expect(report.checks.find((check) => check.id === "poll-snapshot-fallback")).toMatchObject({
       status: "pass",

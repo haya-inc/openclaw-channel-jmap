@@ -39,9 +39,38 @@ async function bootstrapClient(server: JmapMockServer): Promise<Bootstrapped> {
   });
   server.enqueueMethod("Mailbox/get", {
     list: [
-      { id: "mbox-inbox", role: "inbox", name: "Inbox" },
-      { id: "mbox-sent", role: "sent", name: "Sent" },
-      { id: "mbox-drafts", role: "drafts", name: "Drafts" },
+      {
+        id: "mbox-inbox",
+        role: "inbox",
+        name: "Inbox",
+        sortOrder: 10,
+        totalEmails: 12,
+        unreadEmails: 3,
+        myRights: { mayReadItems: true, mayAddItems: true },
+      },
+      {
+        id: "mbox-sent",
+        role: "sent",
+        name: "Sent",
+        sortOrder: 30,
+        myRights: { mayReadItems: true, mayAddItems: true },
+      },
+      {
+        id: "mbox-drafts",
+        role: "drafts",
+        name: "Drafts",
+        sortOrder: 20,
+        myRights: { mayReadItems: true, mayAddItems: true },
+      },
+      {
+        id: "mbox-junk",
+        role: "junk",
+        name: "Junk Mail",
+        sortOrder: 40,
+        totalEmails: 4,
+        unreadEmails: 1,
+        myRights: { mayReadItems: true, mayAddItems: true },
+      },
     ],
   });
   server.enqueueMethod("Identity/get", {
@@ -93,6 +122,15 @@ describe("JmapClient full chain", () => {
     });
     expect(client.state.selfEmails.has("bot@example.com")).toBe(true);
     expect(server.getCalls("Mailbox/get")).toHaveLength(1);
+    expect(server.getCalls("Mailbox/get")[0]?.args).toMatchObject({
+      properties: expect.arrayContaining([
+        "parentId",
+        "sortOrder",
+        "totalEmails",
+        "unreadEmails",
+        "myRights",
+      ]),
+    });
     expect(server.getCalls("Identity/get")).toHaveLength(1);
     const identityGet = server.getCalls("Identity/get")[0];
     expect(identityGet?.args).toMatchObject({
@@ -345,6 +383,204 @@ describe("JmapClient full chain", () => {
     });
   });
 
+  it("lists and resolves mailboxes, then searches all mail with advanced filters and pagination", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+
+    expect(client.listMailboxes().map((mailbox) => mailbox.role)).toEqual([
+      "inbox",
+      "drafts",
+      "sent",
+      "junk",
+    ]);
+    expect(client.resolveMailbox("JUNK")?.id).toBe("mbox-junk");
+    expect(client.resolveMailbox("Junk Mail")?.id).toBe("mbox-junk");
+    expect(client.resolveMailbox("all")).toBeUndefined();
+    expect(() => client.resolveMailbox("missing")).toThrow("JMAP mailbox not found");
+
+    server.enqueueMethod("Email/query", {
+      queryState: "q-all",
+      canCalculateChanges: true,
+      position: 5,
+      total: 10,
+      ids: ["mail-6", "mail-7"],
+    });
+    server.enqueueMethod("Email/get", {
+      list: [
+        { id: "mail-7", subject: "Second", mailboxIds: { "mbox-junk": true } },
+        { id: "mail-6", subject: "First", mailboxIds: { "mbox-sent": true } },
+      ],
+    });
+
+    const page = await client.searchEmailPage({
+      mailbox: "all",
+      unread: true,
+      hasAttachment: true,
+      minSize: 100,
+      maxSize: 10_000,
+      hasKeyword: "$answered",
+      collapseThreads: true,
+      position: 5,
+      limit: 2,
+    });
+
+    expect(page).toMatchObject({
+      queryState: "q-all",
+      canCalculateChanges: true,
+      position: 5,
+      total: 10,
+      nextPosition: 7,
+      emails: [{ id: "mail-6" }, { id: "mail-7" }],
+    });
+    expect(server.getCalls("Email/query")[0]?.args).toEqual({
+      accountId: mailAccountId,
+      filter: {
+        minSize: 100,
+        maxSize: 10_000,
+        hasAttachment: true,
+        hasKeyword: "$answered",
+        notKeyword: "$seen",
+      },
+      sort: [{ property: "receivedAt", isAscending: false }],
+      collapseThreads: true,
+      calculateTotal: true,
+      position: 5,
+      limit: 2,
+    });
+  });
+
+  it("reads bounded HTML bodies and attachment metadata", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    server.enqueueMethod("Email/get", {
+      list: [
+        {
+          id: "mail-html",
+          htmlBody: [{ partId: "html-1", type: "text/html" }],
+          bodyValues: {
+            "html-1": {
+              value: '<p>Open <a href="https://example.com/">portal</a></p>',
+            },
+          },
+          attachments: [
+            {
+              partId: "part-2",
+              blobId: "blob-1",
+              name: "report.pdf",
+              type: "application/pdf",
+              size: 1234,
+            },
+          ],
+          hasAttachment: true,
+        },
+      ],
+    });
+
+    const emails = await client.getEmails(["mail-html"], { maxBodyValueBytes: 2048 });
+
+    expect(emails[0]).toMatchObject({
+      id: "mail-html",
+      attachments: [{ blobId: "blob-1", name: "report.pdf", size: 1234 }],
+    });
+    expect(client.toInboundText(emails[0]!)).toBe("Open portal");
+    expect(server.getCalls("Email/get")[0]?.args).toMatchObject({
+      accountId: mailAccountId,
+      ids: ["mail-html"],
+      fetchTextBodyValues: true,
+      fetchHTMLBodyValues: true,
+      maxBodyValueBytes: 2048,
+      properties: expect.arrayContaining([
+        "htmlBody",
+        "attachments",
+        "hasAttachment",
+        "header:List-Unsubscribe:asText",
+      ]),
+    });
+  });
+
+  it("pages large threads from newest to oldest and preserves chronological order within a page", async () => {
+    const { client } = await bootstrapClient(server);
+    server.enqueueMethod("Thread/get", {
+      list: [
+        {
+          id: "thread-large",
+          emailIds: ["mail-1", "mail-2", "mail-3", "mail-4", "mail-5"],
+        },
+      ],
+    });
+    server.enqueueMethod("Email/get", {
+      list: [
+        { id: "mail-5", receivedAt: "2026-07-29T05:00:00Z" },
+        { id: "mail-3", receivedAt: "2026-07-29T03:00:00Z" },
+        { id: "mail-4", receivedAt: "2026-07-29T04:00:00Z" },
+      ],
+    });
+
+    const page = await client.getThreadPage("thread-large", { limit: 3 });
+
+    expect(page).toMatchObject({
+      total: 5,
+      offset: 0,
+      nextOffset: 3,
+      emails: [{ id: "mail-3" }, { id: "mail-4" }, { id: "mail-5" }],
+    });
+    expect(server.getCalls("Email/get")[0]?.args).toMatchObject({
+      ids: ["mail-3", "mail-4", "mail-5"],
+    });
+  });
+
+  it("moves email exclusively to a named destination mailbox", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    server.enqueueMethod("Email/get", {
+      list: [
+        { id: "mail-1", mailboxIds: { "mbox-inbox": true } },
+        { id: "mail-2", mailboxIds: { "mbox-inbox": true } },
+      ],
+    });
+    server.enqueueMethod("Email/set", {
+      updated: {
+        "mail-1": null,
+        "mail-2": null,
+      },
+    });
+
+    const result = await client.moveEmails(["mail-1", "mail-2"], "Junk Mail");
+
+    expect(result).toMatchObject({
+      destination: { id: "mbox-junk" },
+      previous: [
+        { emailId: "mail-1", mailboxes: [{ id: "mbox-inbox" }] },
+        { emailId: "mail-2", mailboxes: [{ id: "mbox-inbox" }] },
+      ],
+    });
+    expect(server.getCalls("Email/set")[0]?.args).toEqual({
+      accountId: mailAccountId,
+      update: {
+        "mail-1": { mailboxIds: { "mbox-junk": true } },
+        "mail-2": { mailboxIds: { "mbox-junk": true } },
+      },
+    });
+  });
+
+  it("reports per-email move failures instead of claiming success", async () => {
+    const { client } = await bootstrapClient(server);
+    server.enqueueMethod("Email/get", {
+      list: [{ id: "mail-1", mailboxIds: { "mbox-inbox": true } }],
+    });
+    server.enqueueMethod("Email/set", {
+      notUpdated: {
+        "mail-1": {
+          type: "forbidden",
+          description: "Mailbox policy rejected the move",
+        },
+      },
+    });
+
+    await expect(client.moveEmails(["mail-1"], "junk")).rejects.toMatchObject({
+      name: "Error",
+      type: "forbidden",
+      message: "Mailbox policy rejected the move",
+    });
+  });
+
   it("marks processed emails as seen with Email/set", async () => {
     const { client, mailAccountId } = await bootstrapClient(server);
     server.enqueueMethod("Email/set", {
@@ -363,6 +599,25 @@ describe("JmapClient full chain", () => {
           "keywords/$seen": true,
         },
       },
+    });
+  });
+
+  it("reports keyword update failures instead of claiming success", async () => {
+    const { client } = await bootstrapClient(server);
+    server.enqueueMethod("Email/set", {
+      notUpdated: {
+        "mail-1": {
+          type: "forbidden",
+          description: "Read state is locked",
+        },
+      },
+    });
+
+    await expect(
+      client.updateEmailKeywords(["mail-1"], { seen: true }),
+    ).rejects.toMatchObject({
+      type: "forbidden",
+      message: "Read state is locked",
     });
   });
 

@@ -4,6 +4,8 @@ A provider-neutral JMAP email channel and mailbox toolset for OpenClaw.
 
 It lets an OpenClaw agent receive email as conversations and deliberately
 search, read, inspect, send, reply, mark read/unread, and star/unstar messages.
+It can list and select mailboxes, search Junk or all mail, inspect safe links
+and attachment metadata, page through large threads, and move messages.
 It only uses the mailbox-facing JMAP protocol; server administration is outside
 the plugin's scope.
 
@@ -70,11 +72,13 @@ or exposes mailbox identifiers. See
 - Sender policy through OpenClaw's `disabled`, `allowlist`, `pairing`, and
   `open` direct-message policies
 - Agent tools:
+  - `jmap_mail_mailboxes`
   - `jmap_mail_search`
   - `jmap_mail_get`
   - `jmap_mail_thread`
   - `jmap_mail_send`
   - `jmap_mail_update`
+  - `jmap_mail_move`
 
 ## Safe defaults
 
@@ -88,7 +92,10 @@ Email is an untrusted public input surface. The defaults therefore:
 - label automated and bulk/list messages as untrusted and never auto-reply to
   them, while still delivering them for OTP and verification inspection;
 - cap the body exposed to the agent at 100 KB;
-- do not fetch attachments.
+- convert HTML-only bodies to plain text and expose only HTTP(S) links;
+- return attachment metadata but do not download attachment blobs;
+- bound thread reads to the latest 20 messages by default;
+- do not expose permanent deletion as an agent tool.
 
 Each behavior can be enabled explicitly per account.
 
@@ -103,7 +110,7 @@ openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 For a reproducible deployment, pin a release tag or commit:
 
 ```bash
-openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.3.1
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.4.0
 ```
 
 Restart the OpenClaw gateway after changing the plugin or channel
@@ -227,6 +234,10 @@ The plugin requires the JMAP Core, Mail, and Submission capabilities and uses:
 - `EmailSubmission/set`
 
 It does not need a Stalwart management token or server-admin permission.
+The project intends to cover all methods in RFC 8621. Current implementation,
+OpenClaw exposure, mutation risk, and target release are tracked in the
+[RFC 8621 coverage ledger](docs/rfc8621-coverage.md); the source of truth is
+[`rfc8621-coverage.json`](rfc8621-coverage.json).
 
 ## Official compatibility labs
 

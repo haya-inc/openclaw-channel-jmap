@@ -1,3 +1,4 @@
+import { extractHttpLinks, htmlToPlainText } from "./html.js";
 import { looksLikeEmailAddress, normalizeEmailAddress } from "./normalize.js";
 export function compact(value) {
     const next = {};
@@ -28,7 +29,21 @@ export function extractTextFromEmail(email) {
     if (joined) {
         return joined;
     }
+    const htmlParts = ensureArray(email.htmlBody)
+        .map((part) => (part.partId ? bodyValues[part.partId]?.value : undefined))
+        .filter((value) => typeof value === "string");
+    const htmlText = htmlParts.map(htmlToPlainText).filter(Boolean).join("\n\n").trim();
+    if (htmlText) {
+        return htmlText;
+    }
     return (email.preview ?? "").trim();
+}
+export function extractLinksFromEmail(email) {
+    const bodyValues = email.bodyValues ?? {};
+    const htmlParts = ensureArray(email.htmlBody)
+        .map((part) => (part.partId ? bodyValues[part.partId]?.value : undefined))
+        .filter((value) => typeof value === "string");
+    return extractHttpLinks(extractTextFromEmail(email), htmlParts);
 }
 export function formatReplySubject(subject) {
     const trimmed = (subject ?? "").trim();
@@ -118,14 +133,57 @@ export function buildThreadContextFromEmail(accountId, email) {
         references,
     };
 }
-export function isAutomatedEmail(email) {
+const AUTOMATED_LOCAL_PART = /^(?:no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|bounce|automated|system|notifications?)(?:[+._-]|$)/i;
+const AUTOMATED_SUBJECT = /^(?:auto(?:matic)?[- ]?reply|out of office|undelivered|mail delivery|delivery status notification|returned mail|配信不能|不在|自動返信)/i;
+export function classifyEmailAutomation(email) {
+    const reasons = [];
     const autoSubmitted = (email["header:Auto-Submitted:asText"] ?? "").trim().toLowerCase();
     if (autoSubmitted && autoSubmitted !== "no") {
-        return true;
+        reasons.push("auto-submitted");
     }
     const precedence = (email["header:Precedence:asText"] ?? "").trim().toLowerCase();
-    return (["bulk", "junk", "list"].includes(precedence) ||
-        Boolean((email["header:List-Id:asText"] ?? "").trim()));
+    if (["bulk", "junk", "list", "auto_reply"].includes(precedence)) {
+        reasons.push(`precedence:${precedence}`);
+    }
+    if ([
+        "header:List-Id:asText",
+        "header:List-Unsubscribe:asText",
+        "header:List-Post:asText",
+        "header:List-Help:asText",
+    ].some((name) => Boolean(String(email[name] ?? "").trim()))) {
+        reasons.push("mailing-list");
+    }
+    const suppress = (email["header:X-Auto-Response-Suppress:asText"] ?? "").trim();
+    if (suppress && !/^none$/i.test(suppress)) {
+        reasons.push("auto-response-suppress");
+    }
+    const returnPath = (email["header:Return-Path:asText"] ?? "").trim();
+    if (returnPath === "<>" || returnPath === "") {
+        if (email["header:Return-Path:asText"] !== undefined) {
+            reasons.push("empty-return-path");
+        }
+    }
+    const contentType = (email["header:Content-Type:asText"] ?? "").toLowerCase();
+    if (/multipart\/report\b/.test(contentType) && /report-type\s*=\s*delivery-status\b/.test(contentType)) {
+        reasons.push("delivery-status");
+    }
+    const sender = normalizeEmailAddress(ensureArray(email.from)[0]?.email);
+    const localPart = sender.split("@")[0] ?? "";
+    if (AUTOMATED_LOCAL_PART.test(localPart)) {
+        reasons.push("automated-sender");
+    }
+    if (AUTOMATED_SUBJECT.test(email.subject?.trim() ?? "")) {
+        reasons.push("automated-subject");
+    }
+    const uniqueReasons = [...new Set(reasons)];
+    return {
+        automated: uniqueReasons.length > 0,
+        suppressReply: uniqueReasons.length > 0,
+        reasons: uniqueReasons,
+    };
+}
+export function isAutomatedEmail(email) {
+    return classifyEmailAutomation(email).automated;
 }
 function truncateUtf8(value, maxBytes) {
     const source = Buffer.from(value, "utf8");

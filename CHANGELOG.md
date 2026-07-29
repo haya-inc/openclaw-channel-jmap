@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+- Add mailbox listing and mailbox selection by id, standard role, or exact name,
+  including safe all-mail and Junk searches.
+- Add attachment, size, keyword, thread-collapse, and result-position filters
+  with explicit query pagination metadata.
+- Read HTML-only mail as plain text, expose only HTTP(S) links, return attachment
+  metadata without downloading blobs, and strengthen automated-mail detection.
+- Bound thread reads to the latest 20 messages by default with pagination toward
+  older messages.
+- Add a reversible mailbox-move tool and publish a machine-readable RFC 8621
+  method coverage ledger.
+
 ## 0.3.1
 
 - Fall back from empty server-side subject-filter results to bounded

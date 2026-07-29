@@ -125,6 +125,40 @@
         }
       }
     },
+    "rfc8621": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pluginRelease", "totalMethods", "methods"],
+      "properties": {
+        "pluginRelease": {
+          "type": "string"
+        },
+        "totalMethods": {
+          "const": 26
+        },
+        "methods": {
+          "type": "array",
+          "minItems": 26,
+          "maxItems": 26,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["method", "pluginStatus", "serverStatus"],
+            "properties": {
+              "method": {
+                "type": "string"
+              },
+              "pluginStatus": {
+                "enum": ["implemented", "partial", "planned"]
+              },
+              "serverStatus": {
+                "enum": ["verified", "advertised", "unsupported", "unverified"]
+              }
+            }
+          }
+        }
+      }
+    },
     "probePolicy": {
       "type": "object",
       "additionalProperties": false,

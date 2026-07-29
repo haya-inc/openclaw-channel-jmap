@@ -2,6 +2,13 @@ import { resolveJmapAccount } from "./accounts.js";
 import { JmapClient, JmapMethodError, type JmapClientInit } from "./jmap-client.js";
 import type { CoreConfig, JmapAuthMode } from "./types.js";
 import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "./types.js";
+import {
+  RFC8621_COVERAGE,
+  RFC8621_PLUGIN_RELEASE,
+  rfc8621CapabilityForMethod,
+  type Rfc8621PluginStatus,
+  type Rfc8621ServerStatus,
+} from "./rfc8621-coverage.js";
 
 export const JMAP_SERVER_PROFILES = {
   stalwart: {
@@ -72,6 +79,15 @@ export type JmapCompatibilityReport = {
     push: JmapCompatibilityFeatureStatus;
     attachmentDownload: JmapCompatibilityFeatureStatus;
     attachmentUpload: JmapCompatibilityFeatureStatus;
+  };
+  rfc8621: {
+    pluginRelease: string;
+    totalMethods: 26;
+    methods: Array<{
+      method: string;
+      pluginStatus: Rfc8621PluginStatus;
+      serverStatus: Rfc8621ServerStatus;
+    }>;
   };
   probePolicy: {
     sideEffectsPerformed: false;
@@ -188,6 +204,15 @@ function createReportBase(params: {
       push: "unverified",
       attachmentDownload: "unverified",
       attachmentUpload: "unverified",
+    },
+    rfc8621: {
+      pluginRelease: RFC8621_PLUGIN_RELEASE,
+      totalMethods: 26,
+      methods: RFC8621_COVERAGE.map((entry) => ({
+        method: entry.method,
+        pluginStatus: entry.status,
+        serverStatus: "unverified",
+      })),
     },
     probePolicy: {
       sideEffectsPerformed: false,
@@ -493,6 +518,38 @@ export async function runJmapCompatibilityCheck(params: {
     attachmentUpload: featureFromCheck(report.checks, "upload-url", "advertised"),
   };
 
+  const methodCheck = new Map<string, string>([
+    ["Mailbox/get", "mailbox-get"],
+    ["Thread/get", "thread-get"],
+    ["Email/get", "email-metadata"],
+    ["Email/query", "email-query"],
+    ["Email/queryChanges", "email-query-changes"],
+    ["Identity/get", "identity-get"],
+  ]);
+  report.rfc8621.methods = RFC8621_COVERAGE.map((entry) => {
+    const capabilityAvailable =
+      rfc8621CapabilityForMethod(entry.method) === "mail"
+        ? mailAvailable
+        : submissionAvailable;
+    const checkId = methodCheck.get(entry.method);
+    const check = checkId
+      ? report.checks.find((candidate) => candidate.id === checkId)
+      : undefined;
+    let serverStatus: Rfc8621ServerStatus = capabilityAvailable
+      ? "advertised"
+      : "unsupported";
+    if (check?.status === "pass") {
+      serverStatus = "verified";
+    } else if (check?.status === "fail" && check.code.startsWith("jmap-")) {
+      serverStatus = "unsupported";
+    }
+    return {
+      method: entry.method,
+      pluginStatus: entry.status,
+      serverStatus,
+    };
+  });
+
   const requiredChecks = report.checks.filter((entry) => entry.required);
   const essentialFailure = requiredChecks.some(
     (entry) => READ_REQUIRED.has(entry.id) && entry.status === "fail",
@@ -540,6 +597,7 @@ export function formatJmapCompatibilityReport(report: JmapCompatibilityReport): 
     `Required scope: ${report.scope}`,
     `Account: ${report.accountId}`,
     `Authentication: ${report.authMode}`,
+    `RFC 8621 methods: ${report.rfc8621.methods.filter((entry) => entry.pluginStatus === "implemented").length} implemented, ${report.rfc8621.methods.filter((entry) => entry.pluginStatus === "partial").length} partial, ${report.rfc8621.methods.filter((entry) => entry.pluginStatus === "planned").length} planned`,
     "Checks:",
   ];
   for (const check of report.checks) {
