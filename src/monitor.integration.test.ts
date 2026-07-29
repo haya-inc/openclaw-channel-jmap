@@ -219,6 +219,9 @@ describe("monitorJmapProvider polling chain", () => {
       direction: "inbound",
       at: expect.any(Number),
     });
+    await vi.waitFor(() => {
+      expect(getJmapRuntimeStatus("default").pollCount).toBe(1);
+    });
     expect(statusSink).toHaveBeenCalledWith(
       expect.objectContaining({
         lastSuccessfulPollAt: expect.any(Number),
