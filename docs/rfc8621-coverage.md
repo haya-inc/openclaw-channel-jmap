@@ -27,6 +27,14 @@ ready. The authoritative 0.5 checklist is in
 [`release-gates.json`](../release-gates.json); the versioning rules are in
 [`versioning.md`](versioning.md).
 
+`main` currently contains the 0.5 composition implementation plus early 0.6
+and 0.7 slices: one-page `/changes` access, blob upload, attachment-backed
+drafts, copy, import, and parse. Complete 0.6 still requires durable per-type
+state orchestration, automatic continuation, stale-state recovery, and the
+remaining `queryChanges` methods. Complete 0.7 still requires the download
+tooling and cross-server transfer evidence. These early slices do not advance
+the stable package version.
+
 ## Safety model
 
 - Read operations may be directly exposed when their output is bounded.

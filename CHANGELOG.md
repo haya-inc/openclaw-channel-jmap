@@ -6,6 +6,14 @@
   package version.
 - Expose sending identities and allow an agent to save a plain-text draft with
   an explicitly selected identity without submitting or sending it.
+- Add a content-bound safe composition flow for exact draft preview,
+  replacement-before-removal revision, re-preview, explicit submit or discard,
+  submission history, pending-only cancellation, and advertised delayed send.
+- Support RFC wildcard identities, Reply-To/Bcc defaults, opt-in plain-text
+  signatures, and bounded server-generated search snippets.
+- Add standard `/changes` pages, bounded `Email/parse`, confirmed blob upload
+  and `Email/import`, non-destructive cross-account `Email/copy`, and draft
+  attachments backed by existing blob ids.
 - Add a machine-checked release gate so 0.5.0 is not cut until its complete
   public contract is ready.
 

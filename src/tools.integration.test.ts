@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnyAgentTool } from "openclaw/plugin-sdk/core";
 import { setJmapRuntime } from "./runtime.js";
@@ -7,7 +8,7 @@ import {
 } from "./status.js";
 import { clearJmapAccountState } from "./store.js";
 import { JmapMockServer } from "./test-utils/jmap-mock-server.js";
-import { createJmapTools } from "./tools.js";
+import { createJmapTools, JMAP_TOOL_NAMES } from "./tools.js";
 import type { CoreConfig } from "./types.js";
 import { JMAP_MAIL, JMAP_SUBMISSION } from "./types.js";
 
@@ -51,10 +52,38 @@ function findTool(tools: AnyAgentTool[], name: string): AnyAgentTool {
   return tool;
 }
 
+function enqueueToolDraft(
+  server: JmapMockServer,
+  emailId: string,
+  state: string,
+  overrides: Record<string, unknown> = {},
+) {
+  server.enqueueMethod("Email/get", {
+    state,
+    list: [
+      {
+        id: emailId,
+        blobId: `blob-${emailId}`,
+        threadId: `thread-${emailId}`,
+        mailboxIds: { "mbox-drafts": true },
+        keywords: { $draft: true },
+        from: [{ email: "bot@example.com", name: "Bot" }],
+        to: [{ email: "recipient@example.com" }],
+        subject: "Safe draft",
+        textBody: [{ partId: "body-1", type: "text/plain" }],
+        bodyValues: { "body-1": { value: "Review before sending" } },
+        attachments: [],
+        ...overrides,
+      },
+    ],
+  });
+}
+
 describe("JMAP agent tools full chain", () => {
   let server: JmapMockServer;
   let config: CoreConfig;
   let info: ReturnType<typeof vi.fn>;
+  let activityRecord: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     server = await JmapMockServer.start();
@@ -69,6 +98,7 @@ describe("JMAP agent tools full chain", () => {
       },
     } as CoreConfig;
     info = vi.fn();
+    activityRecord = vi.fn();
     setJmapRuntime({
       config: {
         current: () => config,
@@ -83,7 +113,7 @@ describe("JMAP agent tools full chain", () => {
       },
       channel: {
         activity: {
-          record: vi.fn(),
+          record: activityRecord,
         },
       },
     } as never);
@@ -97,7 +127,18 @@ describe("JMAP agent tools full chain", () => {
     await server.close();
   });
 
-  it("executes all nine model-visible tools and records anonymous usage telemetry", async () => {
+  it("keeps implementation, registration, and manifest tool contracts aligned", () => {
+    const implementationNames = createJmapTools().map((tool) => tool.name);
+    const manifest = JSON.parse(
+      readFileSync(new URL("../openclaw.plugin.json", import.meta.url), "utf8"),
+    ) as { contracts?: { tools?: string[] } };
+
+    expect(implementationNames).toHaveLength(21);
+    expect(implementationNames).toEqual([...JMAP_TOOL_NAMES]);
+    expect(manifest.contracts?.tools).toEqual(implementationNames);
+  });
+
+  it("executes the original nine model-visible tools and records anonymous usage telemetry", async () => {
     const tools = createJmapTools();
 
     const mailboxes = await findTool(tools, "jmap_mail_mailboxes").execute(
@@ -365,6 +406,339 @@ describe("JMAP agent tools full chain", () => {
         String(line).startsWith("tool invocation succeeded name=jmap_mail_"),
       ),
     ).toHaveLength(9);
+    expect(server.pendingResponses).toBe(0);
+  });
+
+  it("runs preview, replacement, re-preview, explicit submit, history, cancel, and discard safely", async () => {
+    const tools = createJmapTools();
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        "jmap_mail_search_snippets",
+        "jmap_mail_changes",
+        "jmap_mail_parse",
+        "jmap_mail_blob_upload",
+        "jmap_mail_import",
+        "jmap_mail_copy",
+        "jmap_mail_draft_preview",
+        "jmap_mail_draft_update",
+        "jmap_mail_draft_discard",
+        "jmap_mail_draft_submit",
+        "jmap_mail_submissions",
+        "jmap_mail_submission_cancel",
+      ]),
+    );
+
+    server.enqueueMethod("SearchSnippet/get", {
+      list: [
+        {
+          emailId: "mail-1",
+          subject: "<mark>Safe</mark> subject",
+          preview: "A <mark>safe</mark> snippet",
+        },
+      ],
+      notFound: [],
+    });
+    const snippets = await findTool(tools, "jmap_mail_search_snippets").execute(
+      "call-snippets",
+      { emailIds: ["mail-1"], text: "safe" },
+    );
+    expect(snippets.details).toMatchObject({
+      snippets: [
+        {
+          emailId: "mail-1",
+          subject: "Safe subject",
+          preview: "A safe snippet",
+        },
+      ],
+    });
+
+    server.enqueueMethod("Email/changes", {
+      oldState: "email-state-0",
+      newState: "email-state-1",
+      hasMoreChanges: false,
+      created: ["mail-1"],
+      updated: [],
+      destroyed: [],
+    });
+    const changes = await findTool(tools, "jmap_mail_changes").execute(
+      "call-changes",
+      {
+        dataType: "Email",
+        sinceState: "email-state-0",
+      },
+    );
+    expect(changes.details).toMatchObject({
+      dataType: "Email",
+      newState: "email-state-1",
+      created: ["mail-1"],
+    });
+
+    server.enqueueMethod("Email/parse", {
+      parsed: {
+        "blob-message-1": {
+          id: null,
+          blobId: "blob-message-1",
+          from: [{ email: "alice@example.com" }],
+          subject: "Attached message",
+          textBody: [{ partId: "body-1", type: "text/plain" }],
+          bodyValues: { "body-1": { value: "Parsed body" } },
+        },
+      },
+      notParsable: [],
+      notFound: [],
+    });
+    const parsed = await findTool(tools, "jmap_mail_parse").execute("call-parse", {
+      blobIds: ["blob-message-1"],
+    });
+    expect(parsed.details).toMatchObject({
+      parsed: [
+        {
+          id: null,
+          sourceBlobId: "blob-message-1",
+          subject: "Attached message",
+          body: "Parsed body",
+          truncated: false,
+        },
+      ],
+    });
+
+    server.enqueueUpload({
+      accountId: "acc-mail",
+      blobId: "blob-uploaded",
+      type: "application/pdf",
+      size: 10,
+    });
+    const upload = await findTool(tools, "jmap_mail_blob_upload").execute(
+      "call-upload",
+      {
+        dataBase64: Buffer.from("attachment").toString("base64"),
+        mediaType: "application/pdf",
+        confirm: true,
+      },
+    );
+    expect(upload.details).toMatchObject({
+      externalSideEffect: true,
+      uploaded: { blobId: "blob-uploaded", type: "application/pdf" },
+    });
+
+    server.enqueueMethod("Email/import", {
+      created: { "import-0": { id: "mail-imported" } },
+    });
+    const imported = await findTool(tools, "jmap_mail_import").execute(
+      "call-import",
+      {
+        blobIds: ["blob-uploaded"],
+        destination: "inbox",
+        confirm: true,
+      },
+    );
+    expect(imported.details).toMatchObject({
+      sent: false,
+      created: { "import-0": { id: "mail-imported" } },
+    });
+
+    server.enqueueMethod("Email/copy", {
+      created: { "copy-0": { id: "mail-copied" } },
+    });
+    const copied = await findTool(tools, "jmap_mail_copy").execute(
+      "call-copy",
+      {
+        emailIds: ["mail-imported"],
+        toAccountId: "acc-destination",
+        destinationMailboxIds: ["dest-inbox"],
+        confirm: true,
+      },
+    );
+    expect(copied.details).toMatchObject({
+      configuredAccountId: "default",
+      fromAccountId: "acc-mail",
+      accountId: "acc-destination",
+      destructive: false,
+      created: { "copy-0": { id: "mail-copied" } },
+    });
+
+    enqueueToolDraft(server, "draft-1", "email-state-1");
+    const firstPreview = await findTool(tools, "jmap_mail_draft_preview").execute(
+      "call-preview-1",
+      { emailId: "draft-1", identityId: "identity-1" },
+    );
+    const firstToken = String(
+      (firstPreview.details as { preview?: { previewToken?: string } }).preview
+        ?.previewToken ?? "",
+    );
+    expect(firstToken).toMatch(/^sha256:[a-f0-9]{64}$/);
+
+    enqueueToolDraft(server, "draft-1", "email-state-1");
+    server.enqueueMethod("Email/set", {
+      newState: "email-state-2",
+      created: {
+        replaceDraft: {
+          id: "draft-2",
+          threadId: "thread-draft-2",
+        },
+      },
+    });
+    server.enqueueMethod("Email/set", {
+      newState: "email-state-3",
+      destroyed: ["draft-1"],
+    });
+    const update = await findTool(tools, "jmap_mail_draft_update").execute(
+      "call-update-draft",
+      {
+        emailId: "draft-1",
+        identityId: "identity-1",
+        previewToken: firstToken,
+        subject: "Reviewed draft",
+        attachments: [
+          {
+            blobId: "blob-uploaded",
+            type: "application/pdf",
+            name: "attachment.pdf",
+          },
+        ],
+      },
+    );
+    expect(update.details).toMatchObject({
+      sent: false,
+      replacement: {
+        previousEmailId: "draft-1",
+        emailId: "draft-2",
+      },
+    });
+
+    enqueueToolDraft(server, "draft-2", "email-state-3", {
+      subject: "Reviewed draft",
+      attachments: [
+        {
+          blobId: "blob-uploaded",
+          type: "application/pdf",
+          name: "attachment.pdf",
+          disposition: "attachment",
+        },
+      ],
+    });
+    const secondPreview = await findTool(tools, "jmap_mail_draft_preview").execute(
+      "call-preview-2",
+      { emailId: "draft-2", identityId: "identity-1" },
+    );
+    const secondToken = String(
+      (secondPreview.details as { preview?: { previewToken?: string } }).preview
+        ?.previewToken ?? "",
+    );
+    expect(secondToken).not.toBe(firstToken);
+
+    enqueueToolDraft(server, "draft-2", "email-state-3", {
+      subject: "Reviewed draft",
+      attachments: [
+        {
+          blobId: "blob-uploaded",
+          type: "application/pdf",
+          name: "attachment.pdf",
+          disposition: "attachment",
+        },
+      ],
+    });
+    server.enqueueMethod("EmailSubmission/set", {
+      created: {
+        submitDraft: {
+          id: "submission-1",
+          threadId: "thread-draft-2",
+        },
+      },
+    });
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [
+        {
+          id: "submission-1",
+          emailId: "draft-2",
+          undoStatus: "pending",
+        },
+      ],
+    });
+    const submit = await findTool(tools, "jmap_mail_draft_submit").execute(
+      "call-submit-draft",
+      {
+        emailId: "draft-2",
+        identityId: "identity-1",
+        previewToken: secondToken,
+        confirm: true,
+      },
+    );
+    expect(submit.details).toMatchObject({
+      externalSideEffect: true,
+      submissionId: "submission-1",
+      undoStatus: "pending",
+      statusObserved: true,
+    });
+    expect(activityRecord).toHaveBeenCalledWith({
+      channel: "jmap",
+      accountId: "default",
+      direction: "outbound",
+    });
+
+    server.enqueueMethod("EmailSubmission/query", {
+      ids: ["submission-1"],
+      queryState: "submission-state-1",
+      total: 1,
+    });
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [{ id: "submission-1", emailId: "draft-2", undoStatus: "pending" }],
+    });
+    const history = await findTool(tools, "jmap_mail_submissions").execute(
+      "call-submission-history",
+      { undoStatus: "pending" },
+    );
+    expect(history.details).toMatchObject({
+      total: 1,
+      submissions: [{ id: "submission-1", undoStatus: "pending" }],
+    });
+
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [{ id: "submission-1", undoStatus: "pending" }],
+    });
+    server.enqueueMethod("EmailSubmission/set", {
+      updated: { "submission-1": null },
+    });
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [{ id: "submission-1", undoStatus: "canceled" }],
+    });
+    const canceled = await findTool(tools, "jmap_mail_submission_cancel").execute(
+      "call-cancel-submission",
+      { submissionId: "submission-1", confirm: true },
+    );
+    expect(canceled.details).toMatchObject({
+      canceled: true,
+      submission: { id: "submission-1", undoStatus: "canceled" },
+    });
+
+    enqueueToolDraft(server, "draft-3", "email-state-4");
+    const discardPreview = await findTool(tools, "jmap_mail_draft_preview").execute(
+      "call-preview-discard",
+      { emailId: "draft-3", identityId: "identity-1" },
+    );
+    const discardToken = String(
+      (discardPreview.details as { preview?: { previewToken?: string } }).preview
+        ?.previewToken ?? "",
+    );
+    enqueueToolDraft(server, "draft-3", "email-state-4");
+    server.enqueueMethod("Email/set", {
+      newState: "email-state-5",
+      destroyed: ["draft-3"],
+    });
+    const discarded = await findTool(tools, "jmap_mail_draft_discard").execute(
+      "call-discard-draft",
+      {
+        emailId: "draft-3",
+        identityId: "identity-1",
+        previewToken: discardToken,
+        confirm: true,
+      },
+    );
+    expect(discarded.details).toMatchObject({
+      discarded: true,
+      emailId: "draft-3",
+      sent: false,
+    });
     expect(server.pendingResponses).toBe(0);
   });
 });

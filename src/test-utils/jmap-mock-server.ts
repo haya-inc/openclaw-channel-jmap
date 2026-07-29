@@ -39,6 +39,12 @@ export type JmapCapturedRequest = {
   methodCalls: JmapCapturedCall[];
 };
 
+export type JmapCapturedUpload = {
+  path: string;
+  contentType: string;
+  body: Buffer;
+};
+
 type JmapMockServerOptions = {
   sessionPath?: string;
   apiPath?: string;
@@ -50,8 +56,10 @@ export class JmapMockServer {
   private readonly server: Server;
   private origin = "";
   private readonly queue: EnqueuedResponse[] = [];
+  private readonly uploadQueue: Array<{ status: number; payload: Record<string, unknown> }> = [];
   private readonly calls: JmapCapturedCall[] = [];
   private readonly requests: JmapCapturedRequest[] = [];
+  private readonly uploads: JmapCapturedUpload[] = [];
   private sessionOverrides: Partial<JmapSession> = {};
 
   private constructor(options?: JmapMockServerOptions) {
@@ -77,7 +85,7 @@ export class JmapMockServer {
   }
 
   get pendingResponses(): number {
-    return this.queue.length;
+    return this.queue.length + this.uploadQueue.length;
   }
 
   close = async (): Promise<void> => {
@@ -134,6 +142,10 @@ export class JmapMockServer {
     });
   }
 
+  enqueueUpload(payload: Record<string, unknown>, status = 200) {
+    this.uploadQueue.push({ status, payload });
+  }
+
   getCalls(methodName?: string): JmapCapturedCall[] {
     if (!methodName) {
       return [...this.calls];
@@ -143,6 +155,10 @@ export class JmapMockServer {
 
   getRequests(): JmapCapturedRequest[] {
     return [...this.requests];
+  }
+
+  getUploads(): JmapCapturedUpload[] {
+    return this.uploads.map((upload) => ({ ...upload, body: Buffer.from(upload.body) }));
   }
 
   private async listen(): Promise<void> {
@@ -162,6 +178,21 @@ export class JmapMockServer {
 
     if (method === "GET" && path === this.sessionPath) {
       this.respondJson(res, 200, this.buildSession());
+      return;
+    }
+
+    if (method === "POST" && path.startsWith("/upload/")) {
+      const upload = this.uploadQueue.shift();
+      if (!upload) {
+        this.respondJson(res, 500, { error: "No queued upload response" });
+        return;
+      }
+      this.uploads.push({
+        path,
+        contentType: String(req.headers["content-type"] ?? ""),
+        body: await this.readBuffer(req),
+      });
+      this.respondJson(res, upload.status, upload.payload);
       return;
     }
 
@@ -289,11 +320,15 @@ export class JmapMockServer {
   }
 
   private async readBody(req: IncomingMessage): Promise<string> {
+    return (await this.readBuffer(req)).toString("utf-8");
+  }
+
+  private async readBuffer(req: IncomingMessage): Promise<Buffer> {
     const chunks: Buffer[] = [];
     for await (const chunk of req) {
       chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
     }
-    return Buffer.concat(chunks).toString("utf-8");
+    return Buffer.concat(chunks);
   }
 
   private respondJson(res: ServerResponse, status: number, body: unknown) {

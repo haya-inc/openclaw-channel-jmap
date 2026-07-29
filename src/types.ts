@@ -130,6 +130,7 @@ export type JmapBodyValue = {
 
 export type JmapEmail = {
   id: string;
+  blobId?: string;
   threadId?: string;
   mailboxIds?: Record<string, boolean>;
   from?: JmapEmailAddress[];
@@ -168,6 +169,9 @@ export type JmapIdentity = {
   name?: string;
   replyTo?: JmapEmailAddress[];
   bcc?: JmapEmailAddress[];
+  textSignature?: string;
+  htmlSignature?: string;
+  mayDelete?: boolean;
   isDefault?: boolean;
 };
 
@@ -178,6 +182,125 @@ export type JmapDraftCreateResult = {
   identityId: string;
   identityEmail: string;
   draftsMailboxId: string;
+};
+
+export type JmapDraftAttachmentInput = {
+  blobId: string;
+  type?: string;
+  name?: string | null;
+  disposition?: string | null;
+  cid?: string | null;
+  language?: string[] | null;
+  location?: string | null;
+};
+
+export type JmapDraftPreview = {
+  emailId: string;
+  blobId?: string;
+  threadId?: string;
+  state: string;
+  previewToken: string;
+  identityId: string;
+  identityEmail: string;
+  from: JmapEmailAddress[];
+  to: JmapEmailAddress[];
+  cc: JmapEmailAddress[];
+  bcc: JmapEmailAddress[];
+  replyTo: JmapEmailAddress[];
+  subject: string;
+  text: string;
+  attachments: JmapBodyPartRef[];
+  size?: number;
+};
+
+export type JmapDraftReplaceResult = {
+  previousEmailId: string;
+  emailId: string;
+  threadId?: string;
+  size?: number;
+  identityId: string;
+  identityEmail: string;
+};
+
+export type JmapSearchSnippet = {
+  emailId: string;
+  subject?: string | null;
+  preview?: string | null;
+};
+
+export type JmapDeliveryStatus = {
+  smtpReply?: string;
+  delivered?: "queued" | "yes" | "no" | "unknown" | string;
+  displayed?: "unknown" | "yes" | string;
+};
+
+export type JmapSubmission = {
+  id: string;
+  identityId?: string;
+  emailId?: string;
+  threadId?: string;
+  sendAt?: string;
+  undoStatus?: "pending" | "final" | "canceled" | string;
+  deliveryStatus?: Record<string, JmapDeliveryStatus> | null;
+  dsnBlobIds?: string[];
+  mdnBlobIds?: string[];
+};
+
+export type JmapSubmissionResult = {
+  submissionId: string;
+  emailId: string;
+  threadId?: string;
+  sendAt?: string;
+  undoStatus?: string;
+  scheduled: boolean;
+  maxDelayedSend: number;
+  statusObserved: boolean;
+};
+
+export type JmapChangesResult = {
+  dataType: "Mailbox" | "Thread" | "Email" | "Identity" | "EmailSubmission";
+  oldState: string;
+  newState: string;
+  hasMoreChanges: boolean;
+  created: string[];
+  updated: string[];
+  destroyed: string[];
+};
+
+export type JmapParsedEmail = Omit<JmapEmail, "id" | "receivedAt"> & {
+  id?: string | null;
+  receivedAt?: string | null;
+};
+
+export type JmapParseResult = {
+  parsed: Record<string, JmapParsedEmail>;
+  notParsable: string[];
+  notFound: string[];
+};
+
+export type JmapBlobUploadResult = {
+  accountId: string;
+  blobId: string;
+  type: string;
+  size: number;
+};
+
+export type JmapImportResult = {
+  created: Record<
+    string,
+    { id: string; blobId?: string; threadId?: string; size?: number }
+  >;
+  notCreated: Record<string, { type?: string; description?: string }>;
+};
+
+export type JmapCopyResult = {
+  fromAccountId: string;
+  accountId: string;
+  created: Record<
+    string,
+    { id: string; blobId?: string; threadId?: string; size?: number }
+  >;
+  notCreated: Record<string, { type?: string; description?: string }>;
 };
 
 export type JmapThreadContext = {

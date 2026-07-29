@@ -4,9 +4,11 @@ A provider-neutral JMAP email channel and mailbox toolset for OpenClaw.
 
 It lets an OpenClaw agent receive email as conversations and deliberately
 search, read, inspect, draft, send, reply, mark read/unread, and star/unstar
-messages. It can list sending identities, save a draft without submitting it,
-list and select mailboxes, search Junk or all mail, inspect safe links and
-attachment metadata, page through large threads, and move messages.
+messages. It can list sending identities, create and safely revise a draft,
+preview the exact message before an explicit submit or discard, inspect
+submission history, cancel while the server still permits undo, list and select
+mailboxes, search Junk or all mail, inspect safe links and attachment metadata,
+page through large threads, and move messages.
 It only uses the mailbox-facing JMAP protocol; server administration is outside
 the plugin's scope.
 
@@ -76,9 +78,21 @@ or exposes mailbox identifiers. See
   - `jmap_mail_mailboxes`
   - `jmap_mail_identities`
   - `jmap_mail_search`
+  - `jmap_mail_search_snippets`
+  - `jmap_mail_changes`
+  - `jmap_mail_parse`
+  - `jmap_mail_blob_upload`
+  - `jmap_mail_import`
+  - `jmap_mail_copy`
   - `jmap_mail_get`
   - `jmap_mail_thread`
   - `jmap_mail_draft_create`
+  - `jmap_mail_draft_preview`
+  - `jmap_mail_draft_update`
+  - `jmap_mail_draft_discard`
+  - `jmap_mail_draft_submit`
+  - `jmap_mail_submissions`
+  - `jmap_mail_submission_cancel`
   - `jmap_mail_send`
   - `jmap_mail_update`
   - `jmap_mail_move`
@@ -99,10 +113,16 @@ Email is an untrusted public input surface. The defaults therefore:
 - return attachment metadata but do not download attachment blobs;
 - bound thread reads to the latest 20 messages by default;
 - do not expose permanent deletion as an agent tool.
-- keep draft creation and submission as separate actions: creating a draft
-  never sends it.
+- keep draft creation and submission as separate actions: creating or revising
+  a draft never sends it;
+- require an exact content-bound preview token plus explicit confirmation for
+  deliberate submission or discard;
+- cap model-driven blob upload at 5 MiB and never destroy originals after
+  cross-account copy.
 
-Each behavior can be enabled explicitly per account.
+Each behavior can be enabled explicitly per account. See the
+[deliberate-composition workflow](docs/deliberate-composition.md) for the safe
+create, preview, revise, re-preview, submit-or-discard sequence.
 
 ## Install
 
@@ -233,11 +253,17 @@ deployments should always set it explicitly.
 The plugin requires the JMAP Core, Mail, and Submission capabilities and uses:
 
 - `Mailbox/get`
+- `Mailbox/changes`
 - `Identity/get`
+- `Identity/changes`
 - `Email/query` and, when supported, `Email/queryChanges`
-- `Email/get` and `Email/set`
-- `Thread/get`
-- `EmailSubmission/set`
+- `Email/get`, `Email/changes`, `Email/set`, `Email/copy`, `Email/import`, and
+  `Email/parse`
+- `Thread/get` and `Thread/changes`
+- `SearchSnippet/get`
+- `EmailSubmission/get`, `EmailSubmission/changes`,
+  `EmailSubmission/query`, and `EmailSubmission/set`
+- the JMAP Core upload endpoint
 
 It does not need a Stalwart management token or server-admin permission.
 The project intends to cover all methods in RFC 8621. Current implementation,

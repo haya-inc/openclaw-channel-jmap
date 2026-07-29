@@ -42,11 +42,10 @@ The stable release requires all items marked `required` in
   standards-compliant profile;
 - completed public documentation and a security review of outbound boundaries.
 
-The first two small slices—basic identity discovery and non-submitting draft
-creation for ordinary identities—may exist on `main` while the package remains
-0.4.1. They make progress toward the contract; they do not redefine the
-contract by themselves. Wildcard identities and complete signature behavior
-remain part of the 0.5 gate.
+The composition implementation may exist on `main` while the package remains
+0.4.1. Passing mocked contract tests makes progress toward the public contract;
+it does not redefine the stable contract by itself. Cross-server evidence and
+the remaining release review are still required before 0.5.0.
 
 ## Promotion
 

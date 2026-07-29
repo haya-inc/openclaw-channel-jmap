@@ -28,9 +28,23 @@
   "contracts": {
     "tools": [
       "jmap_mail_mailboxes",
+      "jmap_mail_identities",
       "jmap_mail_search",
+      "jmap_mail_search_snippets",
+      "jmap_mail_changes",
+      "jmap_mail_parse",
+      "jmap_mail_blob_upload",
+      "jmap_mail_import",
+      "jmap_mail_copy",
       "jmap_mail_get",
       "jmap_mail_thread",
+      "jmap_mail_draft_create",
+      "jmap_mail_draft_preview",
+      "jmap_mail_draft_update",
+      "jmap_mail_draft_discard",
+      "jmap_mail_draft_submit",
+      "jmap_mail_submissions",
+      "jmap_mail_submission_cancel",
       "jmap_mail_send",
       "jmap_mail_update",
       "jmap_mail_move"

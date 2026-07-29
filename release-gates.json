@@ -15,7 +15,7 @@
       {
         "id": "identity-composition",
         "required": true,
-        "complete": false,
+        "complete": true,
         "description": "Select an identity per composition without changing the default, including wildcard domains, reply-to, Bcc, and signature behavior."
       },
       {
@@ -27,37 +27,37 @@
       {
         "id": "draft-lifecycle",
         "required": true,
-        "complete": false,
+        "complete": true,
         "description": "Read, revise, and explicitly discard drafts with optimistic concurrency and auditable results."
       },
       {
         "id": "composition-preview",
         "required": true,
-        "complete": false,
+        "complete": true,
         "description": "Preview the exact identity, recipients, headers, body, and attachments before submission."
       },
       {
         "id": "explicit-submission",
         "required": true,
-        "complete": false,
+        "complete": true,
         "description": "Submit only an existing reviewed draft through a distinct explicit outbound action."
       },
       {
         "id": "submission-observability",
         "required": true,
-        "complete": false,
+        "complete": true,
         "description": "Query submission state and report delivery status and errors truthfully."
       },
       {
         "id": "scheduled-send-and-undo",
         "required": true,
-        "complete": false,
+        "complete": true,
         "description": "Schedule or undo only when advertised and verified; otherwise return an explicit unsupported result."
       },
       {
         "id": "search-snippets",
         "required": true,
-        "complete": false,
+        "complete": true,
         "description": "Expose bounded SearchSnippet/get results without broadening untrusted content access."
       },
       {
@@ -69,7 +69,7 @@
       {
         "id": "documentation-and-security",
         "required": true,
-        "complete": false,
+        "complete": true,
         "description": "Publish operator guidance, compatibility limits, migration notes, and an outbound-boundary security review."
       }
     ]

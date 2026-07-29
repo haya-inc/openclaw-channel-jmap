@@ -18,7 +18,40 @@ function readCreateEmail(
   return (create?.[creationId] as Record<string, unknown>) ?? {};
 }
 
-async function bootstrapClient(server: JmapMockServer): Promise<Bootstrapped> {
+function enqueueDraft(
+  server: JmapMockServer,
+  overrides: Record<string, unknown> = {},
+  state = "email-state-1",
+) {
+  server.enqueueMethod("Email/get", {
+    state,
+    list: [
+      {
+        id: "draft-1",
+        blobId: "blob-draft-1",
+        threadId: "thread-draft-1",
+        mailboxIds: { "mbox-drafts": true },
+        keywords: { $draft: true },
+        from: [{ email: "bot@example.com", name: "OpenClaw Bot" }],
+        to: [{ email: "recipient@example.com" }],
+        cc: [],
+        bcc: [],
+        replyTo: [],
+        subject: "Review me",
+        textBody: [{ partId: "body-1", type: "text/plain" }],
+        bodyValues: { "body-1": { value: "Exact draft body" } },
+        attachments: [],
+        size: 128,
+        ...overrides,
+      },
+    ],
+  });
+}
+
+async function bootstrapClient(
+  server: JmapMockServer,
+  options?: { maxDelayedSend?: number },
+): Promise<Bootstrapped> {
   const mailAccountId = "acc-mail";
   const submissionAccountId = "acc-submission";
   server.setSession({
@@ -35,7 +68,11 @@ async function bootstrapClient(server: JmapMockServer): Promise<Bootstrapped> {
       },
       [submissionAccountId]: {
         accountCapabilities: {
-          [JMAP_SUBMISSION]: {},
+          [JMAP_SUBMISSION]: {
+            ...(options?.maxDelayedSend !== undefined
+              ? { maxDelayedSend: options.maxDelayedSend }
+              : {}),
+          },
         },
       },
     },
@@ -137,7 +174,16 @@ describe("JmapClient full chain", () => {
     expect(server.getCalls("Identity/get")).toHaveLength(1);
     const identityGet = server.getCalls("Identity/get")[0];
     expect(identityGet?.args).toMatchObject({
-      properties: ["id", "email", "name", "replyTo", "bcc"],
+      properties: [
+        "id",
+        "email",
+        "name",
+        "replyTo",
+        "bcc",
+        "textSignature",
+        "htmlSignature",
+        "mayDelete",
+      ],
     });
     expect(server.pendingResponses).toBe(0);
   });
@@ -719,6 +765,13 @@ describe("JmapClient full chain", () => {
       bcc: ["audit@example.com", "AUDIT@example.com"],
       subject: "  Draft subject  ",
       text: "Draft body",
+      attachments: [
+        {
+          blobId: "blob-report",
+          type: "application/pdf",
+          name: "report.pdf",
+        },
+      ],
     });
 
     expect(result).toEqual({
@@ -748,6 +801,14 @@ describe("JmapClient full chain", () => {
       replyTo: [{ email: "alias-replies@example.com" }],
       subject: "Draft subject",
       keywords: { $draft: true },
+      attachments: [
+        {
+          blobId: "blob-report",
+          type: "application/pdf",
+          name: "report.pdf",
+          disposition: "attachment",
+        },
+      ],
       "header:Auto-Submitted:asText": "auto-generated",
       "header:X-Auto-Response-Suppress:asText": "All",
     });
@@ -786,6 +847,54 @@ describe("JmapClient full chain", () => {
     expect(server.getCalls("EmailSubmission/set")).toHaveLength(0);
   });
 
+  it("uses wildcard identities, reply routing, archive Bcc, and an explicit signature", async () => {
+    const { client } = await bootstrapClient(server);
+    server.enqueueMethod("Identity/get", {
+      list: [
+        {
+          id: "identity-wildcard",
+          email: "*@example.net",
+          name: "Example Team",
+          replyTo: [{ email: "replies@example.net" }],
+          bcc: [{ email: "archive@example.net" }],
+          textSignature: "-- \nExample Team",
+          htmlSignature: "<p>Example Team</p>",
+          mayDelete: false,
+        },
+      ],
+    });
+    server.enqueueMethod("Email/set", {
+      created: {
+        createDraft: {
+          id: "draft-wildcard",
+        },
+      },
+    });
+
+    const result = await client.createDraft({
+      identityId: "identity-wildcard",
+      fromEmail: "support@example.net",
+      to: ["customer@example.com"],
+      text: "Hello",
+      applyIdentitySignature: true,
+    });
+
+    expect(result).toMatchObject({
+      emailId: "draft-wildcard",
+      identityId: "identity-wildcard",
+      identityEmail: "support@example.net",
+    });
+    const draft = readCreateEmail(server.getCalls("Email/set")[0]!, "createDraft");
+    expect(draft).toMatchObject({
+      from: [{ email: "support@example.net", name: "Example Team" }],
+      replyTo: [{ email: "replies@example.net" }],
+      bcc: [{ email: "archive@example.net" }],
+    });
+    expect(
+      (draft.bodyValues as Record<string, { value: string }>)["body-1"]?.value,
+    ).toBe("Hello\n\n-- \nExample Team");
+  });
+
   it("surfaces a rejected draft as a typed JMAP error without submitting it", async () => {
     const { client } = await bootstrapClient(server);
     server.enqueueMethod("Email/set", {
@@ -807,6 +916,533 @@ describe("JmapClient full chain", () => {
       message: "From address is not allowed",
     });
     expect(server.getCalls("EmailSubmission/set")).toHaveLength(0);
+  });
+
+  it("previews exact draft content and rejects a stale token without mutating mail", async () => {
+    const { client } = await bootstrapClient(server);
+    enqueueDraft(server, {
+      bodyValues: { "body-1": { value: "  Exact draft body \n" } },
+    });
+
+    const preview = await client.previewDraft({
+      emailId: "draft-1",
+      identityId: "identity-1",
+    });
+
+    expect(preview).toMatchObject({
+      emailId: "draft-1",
+      blobId: "blob-draft-1",
+      state: "email-state-1",
+      identityId: "identity-1",
+      identityEmail: "bot@example.com",
+      to: [{ email: "recipient@example.com" }],
+      subject: "Review me",
+      text: "  Exact draft body \n",
+      previewToken: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
+
+    enqueueDraft(
+      server,
+      {
+        subject: "Changed after preview",
+        bodyValues: { "body-1": { value: "  Exact draft body \n" } },
+      },
+      "email-state-2",
+    );
+    await expect(
+      client.discardDraft({
+        emailId: "draft-1",
+        identityId: "identity-1",
+        previewToken: preview.previewToken,
+      }),
+    ).rejects.toMatchObject({
+      type: "stalePreview",
+    });
+    expect(server.getCalls("Email/set")).toHaveLength(0);
+    expect(server.getCalls("EmailSubmission/set")).toHaveLength(0);
+  });
+
+  it("replaces a previewed immutable draft before removing the original", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    const attachment = {
+      blobId: "blob-attachment-1",
+      name: "report.pdf",
+      type: "application/pdf",
+      disposition: "attachment",
+      size: 321,
+    };
+    enqueueDraft(server, { attachments: [attachment] });
+    const preview = await client.previewDraft({
+      emailId: "draft-1",
+      identityId: "identity-1",
+    });
+    enqueueDraft(server, { attachments: [attachment] });
+    server.enqueueMethod("Email/set", {
+      newState: "email-state-2",
+      created: {
+        replaceDraft: {
+          id: "draft-2",
+          threadId: "thread-draft-2",
+          size: 222,
+        },
+      },
+    });
+    server.enqueueMethod("Email/set", {
+      newState: "email-state-3",
+      destroyed: ["draft-1"],
+    });
+
+    const result = await client.replaceDraft({
+      emailId: "draft-1",
+      identityId: "identity-1",
+      previewToken: preview.previewToken,
+      subject: "Reviewed subject",
+      text: "Reviewed body",
+    });
+
+    expect(result).toMatchObject({
+      previousEmailId: "draft-1",
+      emailId: "draft-2",
+      identityId: "identity-1",
+    });
+    const setCalls = server.getCalls("Email/set");
+    expect(setCalls).toHaveLength(2);
+    expect(setCalls[0]?.args).toMatchObject({
+      accountId: mailAccountId,
+      ifInState: "email-state-1",
+      create: {
+        replaceDraft: {
+          subject: "Reviewed subject",
+          attachments: [
+            {
+              blobId: "blob-attachment-1",
+              name: "report.pdf",
+              type: "application/pdf",
+              disposition: "attachment",
+            },
+          ],
+        },
+      },
+    });
+    expect(setCalls[1]?.args).toEqual({
+      accountId: mailAccountId,
+      ifInState: "email-state-2",
+      destroy: ["draft-1"],
+    });
+  });
+
+  it("submits only a freshly previewed draft, exposes history, and cancels only pending work", async () => {
+    const { client, submissionAccountId } = await bootstrapClient(server);
+    enqueueDraft(server);
+    const preview = await client.previewDraft({
+      emailId: "draft-1",
+      identityId: "identity-1",
+    });
+    enqueueDraft(server);
+    server.enqueueMethod("EmailSubmission/set", {
+      created: {
+        submitDraft: {
+          id: "submission-draft-1",
+          threadId: "thread-draft-1",
+        },
+      },
+    });
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [
+        {
+          id: "submission-draft-1",
+          identityId: "identity-1",
+          emailId: "draft-1",
+          threadId: "thread-draft-1",
+          undoStatus: "pending",
+          deliveryStatus: { "recipient@example.com": { delivered: "queued" } },
+        },
+      ],
+    });
+
+    const submitted = await client.submitDraft({
+      emailId: "draft-1",
+      identityId: "identity-1",
+      previewToken: preview.previewToken,
+    });
+
+    expect(submitted).toMatchObject({
+      submissionId: "submission-draft-1",
+      emailId: "draft-1",
+      undoStatus: "pending",
+      scheduled: false,
+      statusObserved: true,
+    });
+    expect(server.getCalls("EmailSubmission/set")[0]?.args).toMatchObject({
+      accountId: submissionAccountId,
+      create: {
+        submitDraft: {
+          emailId: "draft-1",
+          identityId: "identity-1",
+        },
+      },
+      onSuccessUpdateEmail: {
+        "#submitDraft": {
+          "keywords/$draft": null,
+          "mailboxIds/mbox-drafts": null,
+          "mailboxIds/mbox-sent": true,
+        },
+      },
+    });
+
+    server.enqueueMethod("EmailSubmission/query", {
+      ids: ["submission-draft-1"],
+      queryState: "submission-query-1",
+      total: 1,
+    });
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [
+        {
+          id: "submission-draft-1",
+          emailId: "draft-1",
+          undoStatus: "pending",
+        },
+      ],
+    });
+    const history = await client.querySubmissions({ undoStatus: "pending" });
+    expect(history).toMatchObject({
+      queryState: "submission-query-1",
+      total: 1,
+      submissions: [{ id: "submission-draft-1", undoStatus: "pending" }],
+    });
+
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [{ id: "submission-draft-1", undoStatus: "pending" }],
+    });
+    server.enqueueMethod("EmailSubmission/set", {
+      updated: { "submission-draft-1": null },
+    });
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [{ id: "submission-draft-1", undoStatus: "canceled" }],
+    });
+    await expect(client.cancelSubmission("submission-draft-1")).resolves.toMatchObject({
+      id: "submission-draft-1",
+      undoStatus: "canceled",
+    });
+  });
+
+  it("does not make an accepted submission look retry-safe when status lookup fails", async () => {
+    const { client } = await bootstrapClient(server);
+    enqueueDraft(server);
+    const preview = await client.previewDraft({
+      emailId: "draft-1",
+      identityId: "identity-1",
+    });
+    enqueueDraft(server);
+    server.enqueueMethod("EmailSubmission/set", {
+      created: {
+        submitDraft: {
+          id: "submission-status-unknown",
+        },
+      },
+    });
+    server.enqueueError("EmailSubmission/get", {
+      type: "serverFail",
+      description: "Temporary status lookup failure",
+    });
+
+    await expect(
+      client.submitDraft({
+        emailId: "draft-1",
+        identityId: "identity-1",
+        previewToken: preview.previewToken,
+      }),
+    ).resolves.toMatchObject({
+      submissionId: "submission-status-unknown",
+      statusObserved: false,
+    });
+    expect(server.getCalls("EmailSubmission/set")).toHaveLength(1);
+  });
+
+  it("schedules only within the server-advertised delayed-send window", async () => {
+    const { client } = await bootstrapClient(server, { maxDelayedSend: 7_200 });
+    enqueueDraft(server);
+    const preview = await client.previewDraft({
+      emailId: "draft-1",
+      identityId: "identity-1",
+    });
+    enqueueDraft(server);
+    server.enqueueMethod("EmailSubmission/set", {
+      created: {
+        submitDraft: {
+          id: "submission-scheduled",
+        },
+      },
+    });
+    server.enqueueMethod("EmailSubmission/get", {
+      list: [
+        {
+          id: "submission-scheduled",
+          emailId: "draft-1",
+          sendAt: new Date(Date.now() + 3_600_000).toISOString(),
+          undoStatus: "pending",
+        },
+      ],
+    });
+    const requestedSendAt = new Date(Date.now() + 3_600_000).toISOString();
+
+    const result = await client.submitDraft({
+      emailId: "draft-1",
+      identityId: "identity-1",
+      previewToken: preview.previewToken,
+      sendAt: requestedSendAt,
+    });
+
+    expect(result).toMatchObject({
+      submissionId: "submission-scheduled",
+      scheduled: true,
+      maxDelayedSend: 7_200,
+    });
+    const submission = (
+      server.getCalls("EmailSubmission/set")[0]?.args.create as Record<
+        string,
+        { envelope?: { mailFrom?: { parameters?: { HOLDFOR?: string } } } }
+      >
+    ).submitDraft;
+    const holdFor = Number(submission?.envelope?.mailFrom?.parameters?.HOLDFOR);
+    expect(holdFor).toBeGreaterThanOrEqual(3_598);
+    expect(holdFor).toBeLessThanOrEqual(3_600);
+  });
+
+  it("returns bounded server search snippets and not-found ids", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    server.enqueueMethod("SearchSnippet/get", {
+      list: [
+        {
+          emailId: "mail-1",
+          subject: "Quarterly <mark>report</mark>",
+          preview: "The <mark>report</mark> is ready.",
+        },
+      ],
+      notFound: ["mail-missing"],
+    });
+
+    const result = await client.getSearchSnippets(
+      ["mail-1", "mail-missing"],
+      { text: "report" },
+    );
+
+    expect(result).toEqual({
+      snippets: [
+        {
+          emailId: "mail-1",
+          subject: "Quarterly <mark>report</mark>",
+          preview: "The <mark>report</mark> is ready.",
+        },
+      ],
+      notFound: ["mail-missing"],
+    });
+    expect(server.getCalls("SearchSnippet/get")[0]?.args).toEqual({
+      accountId: mailAccountId,
+      filter: { text: "report" },
+      emailIds: ["mail-1", "mail-missing"],
+    });
+  });
+
+  it("reads standard changes pages for mail and submission data types", async () => {
+    const { client, mailAccountId, submissionAccountId } = await bootstrapClient(server);
+    server.enqueueMethod("Email/changes", {
+      oldState: "email-state-1",
+      newState: "email-state-2",
+      hasMoreChanges: true,
+      created: ["mail-created"],
+      updated: ["mail-updated"],
+      destroyed: ["mail-destroyed"],
+    });
+    server.enqueueMethod("Identity/changes", {
+      oldState: "identity-state-1",
+      newState: "identity-state-2",
+      hasMoreChanges: false,
+      created: [],
+      updated: ["identity-1"],
+      destroyed: [],
+    });
+
+    await expect(client.getChanges("Email", "email-state-1", 25)).resolves.toEqual({
+      dataType: "Email",
+      oldState: "email-state-1",
+      newState: "email-state-2",
+      hasMoreChanges: true,
+      created: ["mail-created"],
+      updated: ["mail-updated"],
+      destroyed: ["mail-destroyed"],
+    });
+    await expect(client.getChanges("Identity", "identity-state-1")).resolves.toEqual({
+      dataType: "Identity",
+      oldState: "identity-state-1",
+      newState: "identity-state-2",
+      hasMoreChanges: false,
+      created: [],
+      updated: ["identity-1"],
+      destroyed: [],
+    });
+    expect(server.getCalls("Email/changes")[0]?.args).toEqual({
+      accountId: mailAccountId,
+      sinceState: "email-state-1",
+      maxChanges: 25,
+    });
+    expect(server.getCalls("Identity/changes")[0]?.args).toEqual({
+      accountId: submissionAccountId,
+      sinceState: "identity-state-1",
+      maxChanges: 100,
+    });
+  });
+
+  it("parses RFC 5322 blobs without importing them", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    server.enqueueMethod("Email/parse", {
+      parsed: {
+        "blob-message-1": {
+          id: null,
+          blobId: "blob-message-1",
+          from: [{ email: "alice@example.com" }],
+          to: [{ email: "bot@example.com" }],
+          subject: "Attached message",
+          textBody: [{ partId: "body-1", type: "text/plain" }],
+          bodyValues: { "body-1": { value: "Parsed body" } },
+        },
+      },
+      notParsable: ["blob-invalid"],
+      notFound: ["blob-missing"],
+    });
+
+    const result = await client.parseEmails(
+      ["blob-message-1", "blob-invalid", "blob-missing"],
+      { maxBodyValueBytes: 2_048 },
+    );
+
+    expect(result).toMatchObject({
+      parsed: {
+        "blob-message-1": {
+          id: null,
+          subject: "Attached message",
+        },
+      },
+      notParsable: ["blob-invalid"],
+      notFound: ["blob-missing"],
+    });
+    expect(server.getCalls("Email/parse")[0]?.args).toMatchObject({
+      accountId: mailAccountId,
+      blobIds: ["blob-message-1", "blob-invalid", "blob-missing"],
+      fetchTextBodyValues: true,
+      fetchHTMLBodyValues: true,
+      maxBodyValueBytes: 2_048,
+      properties: expect.arrayContaining([
+        "blobId",
+        "textBody",
+        "bodyValues",
+        "attachments",
+        "header:List-Unsubscribe:asText",
+      ]),
+    });
+    expect(server.getCalls("Email/import")).toHaveLength(0);
+  });
+
+  it("uploads blobs, imports messages, and copies without destroying originals", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    server.enqueueUpload({
+      accountId: mailAccountId,
+      blobId: "blob-uploaded",
+      type: "message/rfc822",
+      size: 18,
+    });
+
+    const uploaded = await client.uploadBlob({
+      data: Buffer.from("Subject: Imported\r\n"),
+      type: "message/rfc822",
+    });
+
+    expect(uploaded).toEqual({
+      accountId: mailAccountId,
+      blobId: "blob-uploaded",
+      type: "message/rfc822",
+      size: 18,
+    });
+    expect(server.getUploads()).toEqual([
+      {
+        path: `/upload/${mailAccountId}`,
+        contentType: "message/rfc822",
+        body: Buffer.from("Subject: Imported\r\n"),
+      },
+    ]);
+
+    server.enqueueMethod("Email/import", {
+      created: {
+        "import-0": {
+          id: "mail-imported",
+          blobId: "blob-imported",
+          threadId: "thread-imported",
+          size: 18,
+        },
+      },
+    });
+    const imported = await client.importEmails({
+      blobIds: ["blob-uploaded"],
+      destination: "inbox",
+      keywords: ["$seen"],
+      ifInState: "email-state-before-import",
+    });
+    expect(imported).toMatchObject({
+      created: {
+        "import-0": {
+          id: "mail-imported",
+        },
+      },
+      notCreated: {},
+    });
+    expect(server.getCalls("Email/import")[0]?.args).toEqual({
+      accountId: mailAccountId,
+      ifInState: "email-state-before-import",
+      emails: {
+        "import-0": {
+          blobId: "blob-uploaded",
+          mailboxIds: { "mbox-inbox": true },
+          keywords: { $seen: true },
+        },
+      },
+    });
+
+    server.enqueueMethod("Email/copy", {
+      fromAccountId: mailAccountId,
+      accountId: "acc-destination",
+      created: {
+        "copy-0": {
+          id: "mail-copy",
+          blobId: "blob-copy",
+          threadId: "thread-copy",
+          size: 18,
+        },
+      },
+    });
+    const copied = await client.copyEmails({
+      emailIds: ["mail-imported"],
+      toAccountId: "acc-destination",
+      destinationMailboxIds: ["dest-inbox"],
+      keywords: ["$seen"],
+    });
+    expect(copied).toMatchObject({
+      fromAccountId: mailAccountId,
+      accountId: "acc-destination",
+      created: { "copy-0": { id: "mail-copy" } },
+      notCreated: {},
+    });
+    expect(server.getCalls("Email/copy")[0]?.args).toEqual({
+      fromAccountId: mailAccountId,
+      accountId: "acc-destination",
+      create: {
+        "copy-0": {
+          id: "mail-imported",
+          mailboxIds: { "dest-inbox": true },
+          keywords: { $seen: true },
+        },
+      },
+      onSuccessDestroyOriginal: false,
+    });
   });
 
   it("sends to direct address through Email/set + EmailSubmission/set", async () => {
