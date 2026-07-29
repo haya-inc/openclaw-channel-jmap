@@ -9,6 +9,7 @@ import {
   type ChannelPlugin,
 } from "openclaw/plugin-sdk/channel-plugin-common";
 import { missingTargetError } from "openclaw/plugin-sdk/channel-feedback";
+import { runStoppablePassiveMonitor } from "openclaw/plugin-sdk/extension-shared";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { CoreConfig } from "./types.js";
 import type { JmapResolvedAccount } from "./types.js";
@@ -333,14 +334,16 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
         `[${account.accountId}] starting JMAP poller (session=${account.sessionUrl}, interval=${account.pollIntervalSec}s)`,
       );
 
-      const { stop } = await monitorJmapProvider({
-        accountId: account.accountId,
-        config: ctx.cfg as CoreConfig,
+      await runStoppablePassiveMonitor({
         abortSignal: ctx.abortSignal,
-        statusSink: (patch) => ctx.setStatus({ accountId: ctx.accountId, ...patch }),
+        start: async () =>
+          monitorJmapProvider({
+            accountId: account.accountId,
+            config: ctx.cfg as CoreConfig,
+            abortSignal: ctx.abortSignal,
+            statusSink: (patch) => ctx.setStatus({ accountId: ctx.accountId, ...patch }),
+          }),
       });
-
-      return { stop };
     },
   },
 };

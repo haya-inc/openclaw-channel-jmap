@@ -1,5 +1,6 @@
 import { applyAccountNameToChannelSection, buildChannelConfigSchema, DEFAULT_ACCOUNT_ID, deleteAccountFromConfigSection, formatPairingApproveHint, normalizeAccountId, setAccountEnabledInConfigSection, } from "openclaw/plugin-sdk/channel-plugin-common";
 import { missingTargetError } from "openclaw/plugin-sdk/channel-feedback";
+import { runStoppablePassiveMonitor } from "openclaw/plugin-sdk/extension-shared";
 import { listJmapAccountIds, resolveDefaultJmapAccountId, resolveJmapAccount } from "./accounts.js";
 import { JmapConfigSchema } from "./config-schema.js";
 import { jmapPairing } from "./inbound.js";
@@ -303,13 +304,15 @@ export const jmapPlugin = {
                 throw new Error(`JMAP is not configured for account "${account.accountId}" (missing API token).`);
             }
             ctx.log?.info(`[${account.accountId}] starting JMAP poller (session=${account.sessionUrl}, interval=${account.pollIntervalSec}s)`);
-            const { stop } = await monitorJmapProvider({
-                accountId: account.accountId,
-                config: ctx.cfg,
+            await runStoppablePassiveMonitor({
                 abortSignal: ctx.abortSignal,
-                statusSink: (patch) => ctx.setStatus({ accountId: ctx.accountId, ...patch }),
+                start: async () => monitorJmapProvider({
+                    accountId: account.accountId,
+                    config: ctx.cfg,
+                    abortSignal: ctx.abortSignal,
+                    statusSink: (patch) => ctx.setStatus({ accountId: ctx.accountId, ...patch }),
+                }),
             });
-            return { stop };
         },
     },
 };
