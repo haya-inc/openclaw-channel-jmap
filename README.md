@@ -60,7 +60,8 @@ or exposes mailbox identifiers. See
 - Basic authentication for account/app passwords
 - Bearer authentication for JMAP API tokens
 - Standard environment-variable and credential-file sources
-- Polling through `Email/queryChanges`
+- Polling through `Email/queryChanges`, with a persistent recent-query
+  snapshot fallback for servers that do not implement it
 - Persistent inbound deduplication
 - Passive inbox mode that detects new mail without starting a model turn
 - Plain-text thread-aware sending through `Email/set` and
@@ -102,7 +103,7 @@ openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 For a reproducible deployment, pin a release tag or commit:
 
 ```bash
-openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.2.0
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.3.0
 ```
 
 Restart the OpenClaw gateway after changing the plugin or channel
@@ -220,12 +221,29 @@ The plugin requires the JMAP Core, Mail, and Submission capabilities and uses:
 
 - `Mailbox/get`
 - `Identity/get`
-- `Email/query` and `Email/queryChanges`
+- `Email/query` and, when supported, `Email/queryChanges`
 - `Email/get` and `Email/set`
 - `Thread/get`
 - `EmailSubmission/set`
 
 It does not need a Stalwart management token or server-admin permission.
+
+## Official compatibility labs
+
+The repository contains reproducible, local-only labs for the official Apache
+James memory image and a JMAP-enabled Cyrus build:
+
+```bash
+npm run build
+scripts/compatibility/run-apache-james.sh
+scripts/compatibility/run-cyrus.sh
+```
+
+Both run the non-mutating `full` probe against a disposable server, seed only a
+local mailbox, and clean up their containers. The weekly GitHub workflow
+publishes versioned, redacted evidence artifacts. Live Fastmail, Stalwart, and
+other-server checks use GitHub Environments so credentials never enter the
+repository. See [JMAP compatibility checks](docs/compatibility.md).
 
 ## Runtime status and evaluation
 

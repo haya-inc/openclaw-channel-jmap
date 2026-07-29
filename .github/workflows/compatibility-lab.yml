@@ -1,0 +1,67 @@
+name: JMAP compatibility (official labs)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - server: apache-james
+            version: 3.9.0
+            artifact: apache/james:memory-3.9.0@sha256:c7d6172292a902ca7be5f16dace658f42d31bfca62a0a38598bee7a6dab09434
+            script: scripts/compatibility/run-apache-james.sh
+          - server: cyrus
+            version: 3.13.6
+            artifact: cyrus-imapd@248be58c89fc7f841e5117a4269c8e05ac9a93ea built with cyrusimap/cyrus-docker@sha256:2230f54eff887845d81a51e9c35362b66d6e5c6cbcc2825f84d44678a5871a3d
+            script: scripts/compatibility/run-cyrus.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: mkdir -p "artifacts/${{ matrix.server }}"
+      - id: probe
+        name: Run official full-scope compatibility lab
+        env:
+          COMPATIBILITY_REPORT: artifacts/${{ matrix.server }}/report.json
+          JMAP_COMPATIBILITY_SCOPE: full
+        shell: bash
+        run: |
+          set +e
+          "${{ matrix.script }}"
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Package redacted evidence
+        if: always() && hashFiles(format('artifacts/{0}/report.json', matrix.server)) != ''
+        run: |
+          node scripts/compatibility/create-evidence.mjs \
+            --report "artifacts/${{ matrix.server }}/report.json" \
+            --output "artifacts/${{ matrix.server }}/evidence.json" \
+            --level lab \
+            --server-version "${{ matrix.version }}" \
+            --artifact "${{ matrix.artifact }}" \
+            --source-revision "${GITHUB_SHA}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jmap-compatibility-lab-${{ matrix.server }}-${{ matrix.version }}
+          path: artifacts/${{ matrix.server }}
+          if-no-files-found: error
+          retention-days: 90
+      - name: Enforce compatibility verdict
+        env:
+          PROBE_EXIT_CODE: ${{ steps.probe.outputs.exit_code }}
+        run: test "$PROBE_EXIT_CODE" -eq 0

@@ -294,4 +294,117 @@ describe("monitorJmapProvider polling chain", () => {
 
     secondMonitor.stop();
   });
+
+  it("falls back to recent-query polling when Email/queryChanges is unavailable", async () => {
+    enqueueInitChain(server);
+    server.enqueueMethod("Email/query", {
+      queryState: "q-initial",
+      ids: [],
+    });
+    server.enqueueError("Email/queryChanges", {
+      type: "unknownMethod",
+      description: "Email/queryChanges is not implemented",
+    });
+    server.enqueueMethod("Email/query", {
+      queryState: "q-baseline",
+      ids: ["mail-existing"],
+    });
+    server.enqueueMethod("Email/query", {
+      queryState: "q-next",
+      ids: ["mail-new", "mail-existing"],
+    });
+    server.enqueueMethod("Email/get", {
+      list: [
+        {
+          id: "mail-new",
+          threadId: "thread-new",
+          from: [{ email: "alice@example.com", name: "Alice" }],
+          to: [{ email: "bot@example.com", name: "OpenClaw Bot" }],
+          preview: "new through polling fallback",
+          receivedAt: "2026-02-16T05:21:00.000Z",
+        },
+      ],
+    });
+    server.enqueueMethod("Email/set", {
+      updated: {
+        "mail-new": null,
+      },
+    });
+    mocks.sleepMock.mockResolvedValueOnce(undefined);
+
+    const config = createConfig(server);
+    const activityRecord = vi.fn();
+    configureRuntime(config, activityRecord);
+
+    const monitor = await monitorJmapProvider({ config });
+
+    await vi.waitFor(() => {
+      expect(mocks.handleJmapInboundMock).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.handleJmapInboundMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          messageId: "mail-new",
+        }),
+      }),
+    );
+    expect(server.getCalls("Email/queryChanges")).toHaveLength(1);
+    expect(server.getCalls("Email/query")).toHaveLength(3);
+    expect(server.getCalls("Email/get")).toHaveLength(1);
+    expect(server.pendingResponses).toBe(0);
+
+    monitor.stop();
+  });
+
+  it("paginates snapshot polling until it reaches a persisted boundary", async () => {
+    enqueueInitChain(server);
+    const newIds = Array.from({ length: 50 }, (_, index) => `mail-new-${index}`);
+    server.enqueueMethod("Email/query", {
+      queryState: "q-initial",
+      ids: [],
+    });
+    server.enqueueError("Email/queryChanges", {
+      type: "unknownMethod",
+    });
+    server.enqueueMethod("Email/query", {
+      queryState: "q-baseline",
+      ids: ["mail-existing"],
+    });
+    server.enqueueMethod("Email/query", {
+      queryState: "q-page-1",
+      ids: newIds,
+    });
+    server.enqueueMethod("Email/query", {
+      queryState: "q-page-2",
+      ids: ["mail-existing"],
+    });
+    server.enqueueMethod("Email/get", {
+      list: newIds.map((id, index) => ({
+        id,
+        threadId: `thread-${index}`,
+        from: [{ email: "alice@example.com", name: "Alice" }],
+        to: [{ email: "bot@example.com", name: "OpenClaw Bot" }],
+        preview: `snapshot message ${index}`,
+        receivedAt: `2026-02-16T05:21:${String(index).padStart(2, "0")}.000Z`,
+      })),
+    });
+    mocks.sleepMock.mockResolvedValueOnce(undefined);
+
+    const config = createConfig(server);
+    config.channels!.jmap!.markAsRead = false;
+    const activityRecord = vi.fn();
+    configureRuntime(config, activityRecord);
+
+    const monitor = await monitorJmapProvider({ config });
+
+    await vi.waitFor(() => {
+      expect(mocks.handleJmapInboundMock).toHaveBeenCalledTimes(50);
+    });
+    expect(server.getCalls("Email/queryChanges")).toHaveLength(1);
+    expect(server.getCalls("Email/query")).toHaveLength(4);
+    expect(server.getCalls("Email/get")).toHaveLength(1);
+    expect(server.pendingResponses).toBe(0);
+
+    monitor.stop();
+  });
 });

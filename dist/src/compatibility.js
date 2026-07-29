@@ -31,7 +31,7 @@ const READ_REQUIRED = new Set([
     "mail-capability",
     "mailbox-get",
     "email-query",
-    "email-query-changes",
+    "receive-polling",
     "email-metadata",
 ]);
 const MANAGE_REQUIRED = new Set([...READ_REQUIRED, "mailbox-rights"]);
@@ -211,19 +211,38 @@ export async function runJmapCompatibilityCheck(params) {
     catch (error) {
         addCheck("email-query", "fail", "invoked", safeErrorCode(error), Date.now() - queryStartedAt);
     }
+    let receivePollingVerified = false;
     if (queryState) {
         const changesStartedAt = Date.now();
         try {
             await client.queryInboxChanges(queryState);
+            receivePollingVerified = true;
             addCheck("email-query-changes", "pass", "invoked", "method-succeeded", Date.now() - changesStartedAt);
         }
         catch (error) {
             addCheck("email-query-changes", "fail", "invoked", safeErrorCode(error), Date.now() - changesStartedAt);
+            if (error instanceof JmapMethodError &&
+                error.type.toLowerCase() === "unknownmethod") {
+                const fallbackStartedAt = Date.now();
+                try {
+                    await client.queryRecentInboxIds({ limit: 1 });
+                    receivePollingVerified = true;
+                    addCheck("poll-snapshot-fallback", "pass", "invoked", "recent-query-dedupe-fallback", Date.now() - fallbackStartedAt);
+                }
+                catch (fallbackError) {
+                    addCheck("poll-snapshot-fallback", "fail", "invoked", safeErrorCode(fallbackError), Date.now() - fallbackStartedAt);
+                }
+            }
+            else {
+                addCheck("poll-snapshot-fallback", "skip", "not-run", "fallback-not-applicable");
+            }
         }
     }
     else {
         addCheck("email-query-changes", "skip", "not-run", "query-state-unavailable");
+        addCheck("poll-snapshot-fallback", "skip", "not-run", "query-state-unavailable");
     }
+    addCheck("receive-polling", receivePollingVerified ? "pass" : "fail", receivePollingVerified ? "invoked" : "not-run", receivePollingVerified ? "poll-strategy-verified" : "poll-strategy-unavailable");
     const metadataStartedAt = Date.now();
     try {
         const metadata = await client.probeEmailMetadata();
@@ -252,7 +271,7 @@ export async function runJmapCompatibilityCheck(params) {
     addCheck("upload-url", state.uploadUrl ? "pass" : "fail", state.uploadUrl ? "advertised" : "not-advertised", state.uploadUrl ? "template-advertised" : "template-missing");
     addCheck("event-source-url", state.eventSourceUrl ? "pass" : "fail", state.eventSourceUrl ? "advertised" : "not-advertised", state.eventSourceUrl ? "template-advertised" : "template-missing");
     report.features = {
-        receivePolling: featureFromCheck(report.checks, "email-query-changes", "verified"),
+        receivePolling: featureFromCheck(report.checks, "receive-polling", "verified"),
         search: featureFromCheck(report.checks, "email-query", "verified"),
         read: report.checks.find((entry) => entry.id === "email-metadata")?.code === "empty-mailbox"
             ? mailAvailable

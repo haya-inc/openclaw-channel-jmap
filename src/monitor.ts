@@ -3,7 +3,7 @@ import type { CoreConfig, JmapResolvedAccount } from "./types.js";
 import { resolveJmapAccount } from "./accounts.js";
 import { handleJmapInbound } from "./inbound.js";
 import { createJmapInboundDeduper } from "./inbound-dedupe.js";
-import { JmapClient, parseInboundEmail } from "./jmap-client.js";
+import { JmapClient, JmapMethodError, parseInboundEmail } from "./jmap-client.js";
 import { getJmapRuntime } from "./runtime.js";
 import { isRecoverableJmapPollError } from "./send.js";
 import {
@@ -17,6 +17,7 @@ import { clearJmapAccountState, setJmapClient, setThreadContext } from "./store.
 const UNREAD_SWEEP_LIMIT = 50;
 const UNREAD_SWEEP_MAX_ROUNDS = 20;
 const RECENT_INBOUND_CACHE_LIMIT = 2000;
+const SNAPSHOT_MAX_PAGES = RECENT_INBOUND_CACHE_LIMIT / UNREAD_SWEEP_LIMIT;
 
 type JmapMonitorOptions = {
   accountId?: string;
@@ -57,7 +58,10 @@ async function pollLoop(params: {
     logger: runtime,
   });
 
-  const processEmailIds = async (ids: string[], source: "unread-sweep" | "query-changes") => {
+  const processEmailIds = async (
+    ids: string[],
+    source: "unread-sweep" | "query-changes" | "poll-snapshot",
+  ) => {
     const unseenIds = deduper.filterUnprocessed(ids);
     if (unseenIds.length === 0) {
       return;
@@ -168,7 +172,30 @@ async function pollLoop(params: {
     }
   };
 
+  const queryNewSnapshotIds = async (): Promise<string[]> => {
+    const newIds: string[] = [];
+    for (let page = 0; page < SNAPSHOT_MAX_PAGES; page += 1) {
+      const ids = await client.queryRecentInboxIds({
+        limit: UNREAD_SWEEP_LIMIT,
+        position: page * UNREAD_SWEEP_LIMIT,
+      });
+      for (const id of ids) {
+        if (deduper.has(id)) {
+          return newIds;
+        }
+        newIds.push(id);
+      }
+      if (ids.length < UNREAD_SWEEP_LIMIT) {
+        return newIds;
+      }
+    }
+    throw new Error(
+      `JMAP snapshot polling exceeded ${RECENT_INBOUND_CACHE_LIMIT} unseen messages`,
+    );
+  };
+
   let queryState = await client.queryInboxState();
+  let pollMode: "query-changes" | "snapshot" = "query-changes";
   runtime.info(`poll loop ready queryState=${queryState}`);
   if (account.config.processExistingUnread === true) {
     await runUnreadSweep("startup");
@@ -176,6 +203,14 @@ async function pollLoop(params: {
 
   while (!abortSignal.aborted) {
     try {
+      if (pollMode === "snapshot") {
+        const recentIds = await queryNewSnapshotIds();
+        await processEmailIds(recentIds, "poll-snapshot");
+        recordJmapPollSuccess(account.accountId);
+        await sleep(Math.max(1, account.pollIntervalSec) * 1000);
+        continue;
+      }
+
       const changes = await client.queryInboxChanges(queryState);
       queryState = changes.newQueryState || queryState;
 
@@ -195,6 +230,24 @@ async function pollLoop(params: {
 
       await sleep(Math.max(1, account.pollIntervalSec) * 1000);
     } catch (error) {
+      if (
+        pollMode === "query-changes" &&
+        error instanceof JmapMethodError &&
+        error.type.toLowerCase() === "unknownmethod"
+      ) {
+        const baselineIds = await client.queryRecentInboxIds({
+          limit: UNREAD_SWEEP_LIMIT,
+        });
+        await deduper.rememberMany(baselineIds);
+        pollMode = "snapshot";
+        runtime.warn(
+          "Email/queryChanges is unavailable; using recent-query polling with persistent deduplication",
+        );
+        recordJmapPollSuccess(account.accountId);
+        await sleep(Math.max(1, account.pollIntervalSec) * 1000);
+        continue;
+      }
+
       const message = formatError(error);
       recordJmapPollError(account.accountId, message);
 

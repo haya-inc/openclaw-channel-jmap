@@ -101,6 +101,54 @@ describe("JmapClient full chain", () => {
     expect(server.pendingResponses).toBe(0);
   });
 
+  it("resolves relative Session resource and URI-template URLs", async () => {
+    server.setSession({
+      apiUrl: "/jmap",
+      downloadUrl: "/jmap/download/{accountId}/{blobId}/{name}?accept={type}",
+      uploadUrl: "/jmap/upload/{accountId}/",
+      eventSourceUrl: "/jmap/eventsource/?types={types}&ping={ping}",
+      primaryAccounts: {
+        [JMAP_MAIL]: "acc-mail",
+        [JMAP_SUBMISSION]: "acc-mail",
+      },
+      accounts: {
+        "acc-mail": {
+          accountCapabilities: null,
+        },
+      },
+    });
+    server.enqueueMethod("Mailbox/get", {
+      list: [{ id: "mbox-inbox", role: "inbox", name: "Inbox" }],
+    });
+    server.enqueueMethod("Identity/get", {
+      list: [
+        {
+          id: "identity-relative",
+          email: "bot@example.com",
+          name: "Relative Session",
+          isDefault: true,
+        },
+      ],
+    });
+    const client = new JmapClient({
+      sessionUrl: server.sessionUrl,
+      token: "test-token",
+    });
+
+    await client.init();
+
+    expect(client.state).toMatchObject({
+      apiUrl: `${server.origin}/jmap`,
+      downloadUrl: `${server.origin}/jmap/download/{accountId}/{blobId}/{name}?accept={type}`,
+      uploadUrl: `${server.origin}/jmap/upload/{accountId}/`,
+      eventSourceUrl: `${server.origin}/jmap/eventsource/?types={types}&ping={ping}`,
+      submissionAccountId: "acc-mail",
+      identityId: "identity-relative",
+    });
+    expect(client.state.mailAccountCapabilities).toContain(JMAP_MAIL);
+    expect(client.state.submissionAccountCapabilities).toContain(JMAP_SUBMISSION);
+  });
+
   it("keeps Mail-only accounts readable and fails sending before creating a draft", async () => {
     server.setSession({
       capabilities: {
@@ -210,6 +258,28 @@ describe("JmapClient full chain", () => {
         notKeyword: "$seen",
       },
       sort: [{ property: "receivedAt", isAscending: true }],
+      limit: 10,
+    });
+  });
+
+  it("queries recent inbox ids for polling fallback", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    server.enqueueMethod("Email/query", {
+      queryState: "q-recent",
+      ids: ["mail-new", "mail-old"],
+    });
+
+    const ids = await client.queryRecentInboxIds({ limit: 10 });
+
+    expect(ids).toEqual(["mail-new", "mail-old"]);
+    const recentQueryCall = server.getCalls("Email/query")[0];
+    expect(recentQueryCall?.args).toMatchObject({
+      accountId: mailAccountId,
+      filter: {
+        inMailbox: "mbox-inbox",
+      },
+      sort: [{ property: "receivedAt", isAscending: false }],
+      position: 0,
       limit: 10,
     });
   });

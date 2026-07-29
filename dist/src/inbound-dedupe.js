@@ -138,6 +138,24 @@ export async function createJmapInboundDeduper(params) {
             }
             return true;
         },
+        rememberMany: async (emailIds) => {
+            let inserted = 0;
+            for (const emailId of emailIds) {
+                if (tracker.add(emailId)) {
+                    inserted += 1;
+                }
+            }
+            if (inserted === 0) {
+                return 0;
+            }
+            try {
+                await writeProcessedIds(filePath, tracker.snapshot());
+            }
+            catch (error) {
+                params.logger?.warn?.(`inbound dedupe persist failed path=${filePath} error=${String(error)}`);
+            }
+            return inserted;
+        },
     };
 }
 //# sourceMappingURL=inbound-dedupe.js.map

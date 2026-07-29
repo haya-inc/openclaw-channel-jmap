@@ -1,6 +1,28 @@
 import { buildThreadContextFromEmail, compact, ensureArray, extractTextFromEmail, formatReplySubject, normalizeIdentityEmails, parseTimestampMs, pickIdentity, } from "./jmap-email.js";
 import { normalizeEmailAddress } from "./normalize.js";
 import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "./types.js";
+function resolveSessionUrl(value, baseUrl) {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    const templates = [];
+    const masked = trimmed.replace(/\{[^}]+\}/g, (template) => {
+        const marker = `__OPENCLAW_JMAP_TEMPLATE_${templates.length}__`;
+        templates.push(template);
+        return marker;
+    });
+    const resolved = new URL(masked, baseUrl).toString();
+    return templates.reduce((url, template, index) => url.replace(`__OPENCLAW_JMAP_TEMPLATE_${index}__`, template), resolved);
+}
+function accountCapabilitiesFor(session, accountId) {
+    const explicit = Object.keys(session.accounts?.[accountId]?.accountCapabilities ?? {});
+    const primary = Object.entries(session.primaryAccounts ?? {})
+        .filter(([capability, primaryAccountId]) => primaryAccountId === accountId &&
+        Boolean((session.capabilities ?? {})[capability]))
+        .map(([capability]) => capability);
+    return [...new Set([...explicit, ...primary])];
+}
 export class JmapMethodError extends Error {
     type;
     constructor(type, message) {
@@ -61,9 +83,9 @@ export class JmapClient {
         const sentMailboxId = mailboxes.find((box) => box.role === "sent")?.id;
         const draftsMailboxId = mailboxes.find((box) => box.role === "drafts")?.id;
         const capabilities = Object.keys(session.capabilities ?? {});
-        const mailAccountCapabilities = Object.keys(session.accounts?.[mailAccountId]?.accountCapabilities ?? {});
+        const mailAccountCapabilities = accountCapabilitiesFor(session, mailAccountId);
         const submissionAccountCapabilities = submissionAccountId
-            ? Object.keys(session.accounts?.[submissionAccountId]?.accountCapabilities ?? {})
+            ? accountCapabilitiesFor(session, submissionAccountId)
             : [];
         this.initState = {
             apiUrl: session.apiUrl,
@@ -102,6 +124,26 @@ export class JmapClient {
             throw new Error("JMAP Email/query did not return queryState");
         }
         return queryState;
+    }
+    async queryRecentInboxIds(params) {
+        const state = this.state;
+        const limit = typeof params?.limit === "number" && Number.isFinite(params.limit) && params.limit > 0
+            ? Math.trunc(params.limit)
+            : 50;
+        const position = typeof params?.position === "number" && Number.isFinite(params.position) && params.position >= 0
+            ? Math.trunc(params.position)
+            : 0;
+        const result = await this.callMethod("Email/query", {
+            accountId: state.mailAccountId,
+            ...(state.inboxMailboxId ? { filter: { inMailbox: state.inboxMailboxId } } : {}),
+            sort: [{ property: "receivedAt", isAscending: false }],
+            calculateTotal: false,
+            position,
+            limit,
+        });
+        return ensureArray(result.ids)
+            .map((entry) => entry.trim())
+            .filter(Boolean);
     }
     async queryUnreadInboxIds(params) {
         const state = this.state;
@@ -508,11 +550,18 @@ export class JmapClient {
             throw new Error(`JMAP session fetch failed (${response.status}): ${body || response.statusText}`);
         }
         const json = (await response.json());
-        const apiUrl = json.apiUrl?.trim();
+        const sessionResponseUrl = response.url || this.sessionUrl;
+        const apiUrl = resolveSessionUrl(json.apiUrl, sessionResponseUrl);
         if (!apiUrl) {
             throw new Error("JMAP session response missing apiUrl");
         }
-        return { ...json, apiUrl };
+        return {
+            ...json,
+            apiUrl,
+            downloadUrl: resolveSessionUrl(json.downloadUrl, sessionResponseUrl),
+            uploadUrl: resolveSessionUrl(json.uploadUrl, sessionResponseUrl),
+            eventSourceUrl: resolveSessionUrl(json.eventSourceUrl, sessionResponseUrl),
+        };
     }
     resolveMailAccountId(session) {
         const preferred = this.accountIdHint?.trim();
@@ -537,17 +586,16 @@ export class JmapClient {
     }
     resolveSubmissionAccountId(session) {
         const primary = session.primaryAccounts?.[JMAP_SUBMISSION]?.trim();
-        if (primary &&
-            (session.accounts?.[primary]?.accountCapabilities ?? {})[JMAP_SUBMISSION]) {
+        if (primary && accountCapabilitiesFor(session, primary).includes(JMAP_SUBMISSION)) {
             return primary;
         }
         const preferred = this.accountIdHint?.trim();
         if (preferred &&
-            (session.accounts?.[preferred]?.accountCapabilities ?? {})[JMAP_SUBMISSION]) {
+            accountCapabilitiesFor(session, preferred).includes(JMAP_SUBMISSION)) {
             return preferred;
         }
-        for (const [accountId, info] of Object.entries(session.accounts ?? {})) {
-            if ((info.accountCapabilities ?? {})[JMAP_SUBMISSION]) {
+        for (const accountId of Object.keys(session.accounts ?? {})) {
+            if (accountCapabilitiesFor(session, accountId).includes(JMAP_SUBMISSION)) {
                 return accountId;
             }
         }

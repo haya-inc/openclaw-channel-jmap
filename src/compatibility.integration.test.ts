@@ -29,6 +29,7 @@ function enqueueProbe(params: {
   submission?: boolean;
   manageRights?: boolean;
   sampleEmail?: boolean;
+  queryChanges?: boolean;
 }) {
   const { server } = params;
   server.enqueueMethod("Mailbox/get", {
@@ -63,14 +64,26 @@ function enqueueProbe(params: {
     queryState: "query-1",
     ids: [],
   });
-  server.enqueueMethod("Email/queryChanges", {
-    accountId: "acc-1",
-    oldQueryState: "query-1",
-    newQueryState: "query-1",
-    added: [],
-    removed: [],
-    hasMoreChanges: false,
-  });
+  if (params.queryChanges === false) {
+    server.enqueueError("Email/queryChanges", {
+      type: "unknownMethod",
+      description: "Email/queryChanges is not implemented",
+    });
+    server.enqueueMethod("Email/query", {
+      accountId: "acc-1",
+      queryState: "query-1",
+      ids: [],
+    });
+  } else {
+    server.enqueueMethod("Email/queryChanges", {
+      accountId: "acc-1",
+      oldQueryState: "query-1",
+      newQueryState: "query-1",
+      added: [],
+      removed: [],
+      hasMoreChanges: false,
+    });
+  }
   server.enqueueMethod("Email/query", {
     accountId: "acc-1",
     queryState: "query-1",
@@ -228,7 +241,7 @@ describe("JMAP compatibility profiles", () => {
         },
       },
     });
-    enqueueProbe({ server, sampleEmail: true });
+    enqueueProbe({ server, sampleEmail: true, queryChanges: false });
 
     const report = await runProfile({
       server,
@@ -237,6 +250,20 @@ describe("JMAP compatibility profiles", () => {
     });
 
     expect(report.verdict).toBe("partial");
+    expect(report.features.receivePolling).toBe("verified");
+    expect(report.checks.find((check) => check.id === "email-query-changes")).toMatchObject({
+      status: "fail",
+      required: false,
+      code: "jmap-unknownmethod",
+    });
+    expect(report.checks.find((check) => check.id === "poll-snapshot-fallback")).toMatchObject({
+      status: "pass",
+      code: "recent-query-dedupe-fallback",
+    });
+    expect(report.checks.find((check) => check.id === "receive-polling")).toMatchObject({
+      status: "pass",
+      required: true,
+    });
     expect(report.checks.find((check) => check.id === "submission-capability")).toMatchObject({
       status: "fail",
       required: true,

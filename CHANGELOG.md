@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0
+
+- Add official, digest-pinned Apache James 3.9.0 and Cyrus 3.13.6
+  compatibility labs and a weekly full-scope compatibility workflow.
+- Resolve relative Session resource and URI-template URLs returned by Cyrus,
+  and tolerate primary-account capability declarations when Cyrus reports a
+  null `accountCapabilities` object.
+- Fall back from unsupported `Email/queryChanges` to persistent recent-query
+  snapshot polling, allowing Apache James to receive new mail safely.
+- Add `fixture`, `lab`, and `live` evidence wrappers with server artifact,
+  probe source revision, and report SHA-256 provenance.
+- Add a Fastmail-ready live workflow with the official Session endpoint and
+  bearer authentication defaults.
+
 ## 0.2.0
 
 - Add a content-free, non-mutating compatibility checker for Stalwart,

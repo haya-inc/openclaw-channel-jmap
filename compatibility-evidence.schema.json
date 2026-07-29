@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haya-inc/openclaw-channel-jmap/blob/main/compatibility-evidence.schema.json",
+  "title": "openclaw-channel-jmap compatibility evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "verificationLevel",
+    "target",
+    "probe",
+    "report"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "verificationLevel": {
+      "enum": ["fixture", "lab", "live"]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serverProfile", "serverVersion", "artifact"],
+      "properties": {
+        "serverProfile": {
+          "enum": ["stalwart", "fastmail", "cyrus", "apache-james", "generic"]
+        },
+        "serverVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageVersion", "sourceRevision", "reportSha256"],
+      "properties": {
+        "packageVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRevision": {
+          "type": "string",
+          "minLength": 7
+        },
+        "reportSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "report": {
+      "$ref": "compatibility-report.schema.json"
+    }
+  }
+}

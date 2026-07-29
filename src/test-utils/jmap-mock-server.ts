@@ -14,7 +14,9 @@ type JmapSession = {
   capabilities: Record<string, unknown>;
   username?: string;
   primaryAccounts: Record<string, string>;
-  accounts: Record<string, { accountCapabilities?: Record<string, unknown> }>;
+  accounts: Record<string, {
+    accountCapabilities?: Record<string, unknown> | null;
+  }>;
 };
 
 type EnqueuedResponse = {
