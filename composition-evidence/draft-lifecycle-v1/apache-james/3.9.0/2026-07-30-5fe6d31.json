@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T19:14:37.207Z",
+  "verificationLevel": "lab",
+  "target": {
+    "serverProfile": "apache-james",
+    "serverVersion": "3.9.0",
+    "artifact": "apache/james:memory-3.9.0@sha256:c7d6172292a902ca7be5f16dace658f42d31bfca62a0a38598bee7a6dab09434"
+  },
+  "probe": {
+    "packageVersion": "0.4.1",
+    "sourceRevision": "5fe6d3165dab8f68e5fed693e86a94a62906bca7",
+    "reportSha256": "1b081fd348f734dbc13465b8d8895f953dc148ecf517339350fc31e42c85589f"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T19:13:45.446Z",
+    "serverProfile": "apache-james",
+    "contract": "draft-lifecycle-v1",
+    "verdict": "compatible",
+    "checks": [
+      {
+        "id": "session",
+        "status": "pass"
+      },
+      {
+        "id": "identity-list",
+        "status": "pass"
+      },
+      {
+        "id": "draft-create",
+        "status": "pass"
+      },
+      {
+        "id": "draft-preview",
+        "status": "pass"
+      },
+      {
+        "id": "draft-replace",
+        "status": "pass"
+      },
+      {
+        "id": "replacement-preview",
+        "status": "pass"
+      },
+      {
+        "id": "stale-preview-rejection",
+        "status": "pass"
+      },
+      {
+        "id": "draft-discard",
+        "status": "pass"
+      },
+      {
+        "id": "discard-confirmation",
+        "status": "pass"
+      }
+    ],
+    "probePolicy": {
+      "sideEffectsPerformed": true,
+      "permittedSideEffects": [
+        "draft-create",
+        "draft-replace",
+        "draft-destroy"
+      ],
+      "recipientsUsed": false,
+      "submissionAttempted": false,
+      "externalDeliveryAttempted": false,
+      "onlyTestDraftBodiesRead": true,
+      "cleanupConfirmed": true
+    }
+  }
+}

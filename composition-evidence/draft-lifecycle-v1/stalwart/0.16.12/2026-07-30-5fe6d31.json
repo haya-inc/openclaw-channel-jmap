@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T19:14:37.363Z",
+  "verificationLevel": "live",
+  "target": {
+    "serverProfile": "stalwart",
+    "serverVersion": "0.16.12",
+    "artifact": "stalwartlabs/stalwart:v0.16@sha256:c73f7b39f5873c4641a9808cb3425a80e1fafe06271f477575a7ca7ead7d37b5"
+  },
+  "probe": {
+    "packageVersion": "0.4.1",
+    "sourceRevision": "5fe6d3165dab8f68e5fed693e86a94a62906bca7",
+    "reportSha256": "fbd445513d8ffaea3ea9b726372b5ff17de46fa454a06543dbb802d75d25499d"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T19:13:45.648Z",
+    "serverProfile": "stalwart",
+    "contract": "draft-lifecycle-v1",
+    "verdict": "compatible",
+    "checks": [
+      {
+        "id": "session",
+        "status": "pass"
+      },
+      {
+        "id": "identity-list",
+        "status": "pass"
+      },
+      {
+        "id": "draft-create",
+        "status": "pass"
+      },
+      {
+        "id": "draft-preview",
+        "status": "pass"
+      },
+      {
+        "id": "draft-replace",
+        "status": "pass"
+      },
+      {
+        "id": "replacement-preview",
+        "status": "pass"
+      },
+      {
+        "id": "stale-preview-rejection",
+        "status": "pass"
+      },
+      {
+        "id": "draft-discard",
+        "status": "pass"
+      },
+      {
+        "id": "discard-confirmation",
+        "status": "pass"
+      }
+    ],
+    "probePolicy": {
+      "sideEffectsPerformed": true,
+      "permittedSideEffects": [
+        "draft-create",
+        "draft-replace",
+        "draft-destroy"
+      ],
+      "recipientsUsed": false,
+      "submissionAttempted": false,
+      "externalDeliveryAttempted": false,
+      "onlyTestDraftBodiesRead": true,
+      "cleanupConfirmed": true
+    }
+  }
+}

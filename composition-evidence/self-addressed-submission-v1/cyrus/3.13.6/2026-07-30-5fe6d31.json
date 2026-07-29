@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T19:14:37.412Z",
+  "verificationLevel": "lab",
+  "target": {
+    "serverProfile": "cyrus",
+    "serverVersion": "3.13.6",
+    "artifact": "cyrus-imapd@248be58c89fc7f841e5117a4269c8e05ac9a93ea built with cyrusimap/cyrus-docker@sha256:2230f54eff887845d81a51e9c35362b66d6e5c6cbcc2825f84d44678a5871a3d"
+  },
+  "probe": {
+    "packageVersion": "0.4.1",
+    "sourceRevision": "5fe6d3165dab8f68e5fed693e86a94a62906bca7",
+    "reportSha256": "b11d8a0b1e8d7b5fd92ce4813b2cc4d06785c3ace04cc13692a1eb72c8d5d18f"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T19:13:32.918Z",
+    "serverProfile": "cyrus",
+    "contract": "self-addressed-submission-v1",
+    "verdict": "compatible",
+    "checks": [
+      {
+        "id": "session",
+        "status": "pass"
+      },
+      {
+        "id": "identity-safety",
+        "status": "pass"
+      },
+      {
+        "id": "self-draft-create",
+        "status": "pass"
+      },
+      {
+        "id": "exact-preview",
+        "status": "pass"
+      },
+      {
+        "id": "explicit-submit",
+        "status": "pass"
+      },
+      {
+        "id": "submission-get",
+        "status": "pass"
+      },
+      {
+        "id": "submission-query",
+        "status": "pass"
+      },
+      {
+        "id": "delayed-send-policy",
+        "status": "pass"
+      },
+      {
+        "id": "cancellation-boundary",
+        "status": "pass"
+      }
+    ],
+    "observations": {
+      "acceptanceObserved": true,
+      "submissionStatusObserved": false,
+      "deliveryStatusObserved": false,
+      "submissionGet": "unavailable",
+      "submissionQuery": "unavailable",
+      "immediateUndoStatus": "unknown",
+      "scheduling": "uncancelable"
+    },
+    "probePolicy": {
+      "sideEffectsPerformed": true,
+      "selfAddressedOnly": true,
+      "externalRecipientsUsed": false,
+      "submissionAttempted": true,
+      "finalDeliveryClaimed": false,
+      "cleanupConfirmed": true
+    }
+  }
+}

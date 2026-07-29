@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T19:14:37.329Z",
+  "verificationLevel": "lab",
+  "target": {
+    "serverProfile": "cyrus",
+    "serverVersion": "3.13.6",
+    "artifact": "cyrus-imapd@248be58c89fc7f841e5117a4269c8e05ac9a93ea built with cyrusimap/cyrus-docker@sha256:2230f54eff887845d81a51e9c35362b66d6e5c6cbcc2825f84d44678a5871a3d"
+  },
+  "probe": {
+    "packageVersion": "0.4.1",
+    "sourceRevision": "5fe6d3165dab8f68e5fed693e86a94a62906bca7",
+    "reportSha256": "dbf08e3a1ba2b9dd4e37e254e323704a4338f71019800c72477be7492a8154ed"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T19:13:32.497Z",
+    "serverProfile": "cyrus",
+    "contract": "draft-lifecycle-v1",
+    "verdict": "compatible",
+    "checks": [
+      {
+        "id": "session",
+        "status": "pass"
+      },
+      {
+        "id": "identity-list",
+        "status": "pass"
+      },
+      {
+        "id": "draft-create",
+        "status": "pass"
+      },
+      {
+        "id": "draft-preview",
+        "status": "pass"
+      },
+      {
+        "id": "draft-replace",
+        "status": "pass"
+      },
+      {
+        "id": "replacement-preview",
+        "status": "pass"
+      },
+      {
+        "id": "stale-preview-rejection",
+        "status": "pass"
+      },
+      {
+        "id": "draft-discard",
+        "status": "pass"
+      },
+      {
+        "id": "discard-confirmation",
+        "status": "pass"
+      }
+    ],
+    "probePolicy": {
+      "sideEffectsPerformed": true,
+      "permittedSideEffects": [
+        "draft-create",
+        "draft-replace",
+        "draft-destroy"
+      ],
+      "recipientsUsed": false,
+      "submissionAttempted": false,
+      "externalDeliveryAttempted": false,
+      "onlyTestDraftBodiesRead": true,
+      "cleanupConfirmed": true
+    }
+  }
+}

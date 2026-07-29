@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T19:14:37.443Z",
+  "verificationLevel": "lab",
+  "target": {
+    "serverProfile": "apache-james",
+    "serverVersion": "3.9.0",
+    "artifact": "apache/james:memory-3.9.0@sha256:c7d6172292a902ca7be5f16dace658f42d31bfca62a0a38598bee7a6dab09434"
+  },
+  "probe": {
+    "packageVersion": "0.4.1",
+    "sourceRevision": "5fe6d3165dab8f68e5fed693e86a94a62906bca7",
+    "reportSha256": "2167fd80cec148a23b98701a24f1d0e73669a620b179b10d3567eb9835acf973"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T19:13:46.224Z",
+    "serverProfile": "apache-james",
+    "contract": "self-addressed-submission-v1",
+    "verdict": "compatible",
+    "checks": [
+      {
+        "id": "session",
+        "status": "pass"
+      },
+      {
+        "id": "identity-safety",
+        "status": "pass"
+      },
+      {
+        "id": "self-draft-create",
+        "status": "pass"
+      },
+      {
+        "id": "exact-preview",
+        "status": "pass"
+      },
+      {
+        "id": "explicit-submit",
+        "status": "pass"
+      },
+      {
+        "id": "submission-get",
+        "status": "pass"
+      },
+      {
+        "id": "submission-query",
+        "status": "pass"
+      },
+      {
+        "id": "delayed-send-policy",
+        "status": "pass"
+      },
+      {
+        "id": "cancellation-boundary",
+        "status": "pass"
+      }
+    ],
+    "observations": {
+      "acceptanceObserved": true,
+      "submissionStatusObserved": false,
+      "deliveryStatusObserved": false,
+      "submissionGet": "unsupported",
+      "submissionQuery": "unsupported",
+      "immediateUndoStatus": "unknown",
+      "scheduling": "unsupported"
+    },
+    "probePolicy": {
+      "sideEffectsPerformed": true,
+      "selfAddressedOnly": true,
+      "externalRecipientsUsed": false,
+      "submissionAttempted": true,
+      "finalDeliveryClaimed": false,
+      "cleanupConfirmed": true
+    }
+  }
+}

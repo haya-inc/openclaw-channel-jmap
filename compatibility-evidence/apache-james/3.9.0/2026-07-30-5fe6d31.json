@@ -1,0 +1,321 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T19:14:16.888Z",
+  "verificationLevel": "lab",
+  "target": {
+    "serverProfile": "apache-james",
+    "serverVersion": "3.9.0",
+    "artifact": "apache/james:memory-3.9.0@sha256:c7d6172292a902ca7be5f16dace658f42d31bfca62a0a38598bee7a6dab09434"
+  },
+  "probe": {
+    "packageVersion": "0.4.1",
+    "sourceRevision": "5fe6d3165dab8f68e5fed693e86a94a62906bca7",
+    "reportSha256": "704e66a5d9bf13935f36fd1da9c33f5bc65e9deac6d1df17b9033389864228d4"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T19:13:43.170Z",
+    "serverProfile": "apache-james",
+    "serverLabel": "Apache James",
+    "scope": "full",
+    "accountId": "default",
+    "authMode": "basic",
+    "verdict": "compatible",
+    "advertisedCapabilities": [
+      "urn:apache:james:params:jmap:delegation",
+      "urn:apache:james:params:jmap:mail:identity:sortorder",
+      "urn:apache:james:params:jmap:mail:quota",
+      "urn:apache:james:params:jmap:mail:shares",
+      "urn:ietf:params:jmap:core",
+      "urn:ietf:params:jmap:mail",
+      "urn:ietf:params:jmap:mdn",
+      "urn:ietf:params:jmap:quota",
+      "urn:ietf:params:jmap:submission",
+      "urn:ietf:params:jmap:vacationresponse",
+      "urn:ietf:params:jmap:websocket"
+    ],
+    "checks": [
+      {
+        "id": "configuration",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "configured"
+      },
+      {
+        "id": "session-discovery",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "session-and-mailbox-ready",
+        "durationMs": 630
+      },
+      {
+        "id": "mailbox-get",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "method-succeeded"
+      },
+      {
+        "id": "core-capability",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "capability-advertised"
+      },
+      {
+        "id": "mail-capability",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "capability-advertised"
+      },
+      {
+        "id": "mailbox-rights",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "management-rights-advertised"
+      },
+      {
+        "id": "email-query",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "method-succeeded",
+        "durationMs": 239
+      },
+      {
+        "id": "email-query-changes",
+        "status": "fail",
+        "required": false,
+        "evidence": "invoked",
+        "code": "jmap-unknownmethod",
+        "durationMs": 12
+      },
+      {
+        "id": "poll-snapshot-fallback",
+        "status": "pass",
+        "required": false,
+        "evidence": "invoked",
+        "code": "recent-query-dedupe-fallback",
+        "durationMs": 19
+      },
+      {
+        "id": "receive-polling",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "poll-strategy-verified"
+      },
+      {
+        "id": "email-metadata",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "email-get-succeeded",
+        "durationMs": 534
+      },
+      {
+        "id": "thread-get",
+        "status": "pass",
+        "required": false,
+        "evidence": "invoked",
+        "code": "method-succeeded"
+      },
+      {
+        "id": "submission-capability",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "capability-advertised"
+      },
+      {
+        "id": "identity-get",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "identity-available"
+      },
+      {
+        "id": "download-url",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "template-advertised"
+      },
+      {
+        "id": "upload-url",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "template-advertised"
+      },
+      {
+        "id": "event-source-url",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "template-advertised"
+      }
+    ],
+    "features": {
+      "receivePolling": "verified",
+      "search": "verified",
+      "read": "verified",
+      "thread": "verified",
+      "update": "advertised",
+      "send": "advertised",
+      "push": "advertised",
+      "attachmentDownload": "advertised",
+      "attachmentUpload": "advertised"
+    },
+    "rfc8621": {
+      "pluginRelease": "0.4.1",
+      "totalMethods": 26,
+      "methods": [
+        {
+          "method": "Mailbox/get",
+          "pluginStatus": "implemented",
+          "serverStatus": "verified"
+        },
+        {
+          "method": "Mailbox/changes",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Mailbox/query",
+          "pluginStatus": "planned",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Mailbox/queryChanges",
+          "pluginStatus": "planned",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Mailbox/set",
+          "pluginStatus": "planned",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Thread/get",
+          "pluginStatus": "implemented",
+          "serverStatus": "verified"
+        },
+        {
+          "method": "Thread/changes",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Email/get",
+          "pluginStatus": "implemented",
+          "serverStatus": "verified"
+        },
+        {
+          "method": "Email/changes",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Email/query",
+          "pluginStatus": "implemented",
+          "serverStatus": "verified"
+        },
+        {
+          "method": "Email/queryChanges",
+          "pluginStatus": "partial",
+          "serverStatus": "unsupported"
+        },
+        {
+          "method": "Email/set",
+          "pluginStatus": "partial",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Email/copy",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Email/import",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Email/parse",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "SearchSnippet/get",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Identity/get",
+          "pluginStatus": "implemented",
+          "serverStatus": "verified"
+        },
+        {
+          "method": "Identity/changes",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "Identity/set",
+          "pluginStatus": "planned",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "EmailSubmission/get",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "EmailSubmission/changes",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "EmailSubmission/query",
+          "pluginStatus": "implemented",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "EmailSubmission/queryChanges",
+          "pluginStatus": "planned",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "EmailSubmission/set",
+          "pluginStatus": "partial",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "VacationResponse/get",
+          "pluginStatus": "planned",
+          "serverStatus": "advertised"
+        },
+        {
+          "method": "VacationResponse/set",
+          "pluginStatus": "planned",
+          "serverStatus": "advertised"
+        }
+      ]
+    },
+    "probePolicy": {
+      "sideEffectsPerformed": false,
+      "messageBodiesRead": false,
+      "messageIdentifiersExposed": false,
+      "outboundDeliveryVerified": false
+    },
+    "limitations": [
+      "The safe probe never sends mail or mutates mailbox state.",
+      "A passing send check verifies advertised Submission support and an Identity, not delivery."
+    ]
+  }
+}

@@ -334,11 +334,13 @@ scripts/compatibility/run-cyrus.sh
 npm run compatibility:generic-fixture
 ```
 
-All run the non-mutating `full` probe against disposable targets. The real
-server labs seed only a local mailbox and clean up their containers. The weekly
-GitHub workflow publishes versioned, redacted evidence artifacts. Live
-Fastmail, Stalwart, and other-server checks use GitHub Environments so
-credentials never enter the repository.
+Each runs the non-mutating `full` probe against a disposable target. The
+official workflow also runs recipient-free draft mutation and self-addressed
+submission inside those isolated targets; the Cyrus SMTP sink has no external
+delivery path. The real-server labs clean up their containers, and the workflow
+publishes versioned, redacted evidence artifacts. Live Fastmail, Stalwart, and
+other-server checks use GitHub Environments so credentials never enter the
+repository.
 
 `npm run compatibility:evidence` checks the durable reviewed history against
 the required Stalwart, Fastmail, Cyrus, Apache James, and generic profiles. It

@@ -134,6 +134,21 @@ history survives workflow artifact expiry.
 Fixture tests validate classification logic; they are not server verification.
 The provider table always names the strongest evidence level actually reached.
 
+The 0.5 composition contracts currently show:
+
+| Provider | Draft lifecycle | Self-addressed submission |
+|---|---|---|
+| Stalwart 0.16.12 | Live verified | Status/history/delivery status observed; delayed send canceled |
+| Fastmail | Dedicated account pending | Dedicated account pending |
+| Cyrus 3.13.6 | Lab verified | Acceptance verified; records expire immediately; advertised pending cancellation is rejected and reported `uncancelable` |
+| Apache James 3.9.0 | Lab verified | Acceptance verified; status/query methods report `unknownMethod`; delayed send reported unsupported |
+| Generic fixture | Fixture verified | Status/history observed; delayed send canceled |
+
+The weaker James and Cyrus observations are not promoted to full feature
+support. They demonstrate that the client preserves submission acceptance,
+reports unavailable capabilities truthfully, and does not claim recall or
+final delivery.
+
 ## Official local labs
 
 After `npm run build`, run either disposable lab:

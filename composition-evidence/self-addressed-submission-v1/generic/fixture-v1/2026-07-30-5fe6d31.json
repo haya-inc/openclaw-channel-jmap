@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T19:14:37.465Z",
+  "verificationLevel": "fixture",
+  "target": {
+    "serverProfile": "generic",
+    "serverVersion": "fixture-v1",
+    "artifact": "openclaw-channel-jmap:generic-rfc8620-rfc8621-fixture-v1"
+  },
+  "probe": {
+    "packageVersion": "0.4.1",
+    "sourceRevision": "5fe6d3165dab8f68e5fed693e86a94a62906bca7",
+    "reportSha256": "f17396a1ba7a0741c1cf323b00f153cf3aece58867607029de04e7ac787a06f1"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T19:13:29.797Z",
+    "serverProfile": "generic",
+    "contract": "self-addressed-submission-v1",
+    "verdict": "compatible",
+    "checks": [
+      {
+        "id": "session",
+        "status": "pass"
+      },
+      {
+        "id": "identity-safety",
+        "status": "pass"
+      },
+      {
+        "id": "self-draft-create",
+        "status": "pass"
+      },
+      {
+        "id": "exact-preview",
+        "status": "pass"
+      },
+      {
+        "id": "explicit-submit",
+        "status": "pass"
+      },
+      {
+        "id": "submission-get",
+        "status": "pass"
+      },
+      {
+        "id": "submission-query",
+        "status": "pass"
+      },
+      {
+        "id": "delayed-send-policy",
+        "status": "pass"
+      },
+      {
+        "id": "cancellation-boundary",
+        "status": "pass"
+      }
+    ],
+    "observations": {
+      "acceptanceObserved": true,
+      "submissionStatusObserved": true,
+      "deliveryStatusObserved": true,
+      "submissionGet": "observed",
+      "submissionQuery": "observed",
+      "immediateUndoStatus": "final",
+      "scheduling": "canceled"
+    },
+    "probePolicy": {
+      "sideEffectsPerformed": true,
+      "selfAddressedOnly": true,
+      "externalRecipientsUsed": false,
+      "submissionAttempted": true,
+      "finalDeliveryClaimed": false,
+      "cleanupConfirmed": true
+    }
+  }
+}

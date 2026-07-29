@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T19:14:37.236Z",
+  "verificationLevel": "fixture",
+  "target": {
+    "serverProfile": "generic",
+    "serverVersion": "fixture-v1",
+    "artifact": "openclaw-channel-jmap:generic-rfc8620-rfc8621-fixture-v1"
+  },
+  "probe": {
+    "packageVersion": "0.4.1",
+    "sourceRevision": "5fe6d3165dab8f68e5fed693e86a94a62906bca7",
+    "reportSha256": "b25938e84ba786bcb5a888232acc9b3079a37b8ee10010a85e08bd7e39f676ba"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T19:13:29.750Z",
+    "serverProfile": "generic",
+    "contract": "draft-lifecycle-v1",
+    "verdict": "compatible",
+    "checks": [
+      {
+        "id": "session",
+        "status": "pass"
+      },
+      {
+        "id": "identity-list",
+        "status": "pass"
+      },
+      {
+        "id": "draft-create",
+        "status": "pass"
+      },
+      {
+        "id": "draft-preview",
+        "status": "pass"
+      },
+      {
+        "id": "draft-replace",
+        "status": "pass"
+      },
+      {
+        "id": "replacement-preview",
+        "status": "pass"
+      },
+      {
+        "id": "stale-preview-rejection",
+        "status": "pass"
+      },
+      {
+        "id": "draft-discard",
+        "status": "pass"
+      },
+      {
+        "id": "discard-confirmation",
+        "status": "pass"
+      }
+    ],
+    "probePolicy": {
+      "sideEffectsPerformed": true,
+      "permittedSideEffects": [
+        "draft-create",
+        "draft-replace",
+        "draft-destroy"
+      ],
+      "recipientsUsed": false,
+      "submissionAttempted": false,
+      "externalDeliveryAttempted": false,
+      "onlyTestDraftBodiesRead": true,
+      "cleanupConfirmed": true
+    }
+  }
+}
