@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "claim": "safe-profile-compatibility",
+  "description": "Minimum durable evidence for the content-free JMAP compatibility probe. This does not certify outbound delivery or state-changing RFC 8621 methods.",
+  "requireCompleteRfc8621Matrix": true,
+  "requirements": [
+    {
+      "serverProfile": "stalwart",
+      "minimumVerificationLevel": "live",
+      "scope": "full"
+    },
+    {
+      "serverProfile": "fastmail",
+      "minimumVerificationLevel": "live",
+      "scope": "full"
+    },
+    {
+      "serverProfile": "cyrus",
+      "minimumVerificationLevel": "lab",
+      "scope": "full"
+    },
+    {
+      "serverProfile": "apache-james",
+      "minimumVerificationLevel": "lab",
+      "scope": "full"
+    },
+    {
+      "serverProfile": "generic",
+      "minimumVerificationLevel": "fixture",
+      "scope": "full"
+    }
+  ]
+}

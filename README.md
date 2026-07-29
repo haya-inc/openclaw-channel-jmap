@@ -324,19 +324,26 @@ machine-readable [`release-gates.json`](release-gates.json).
 ## Official compatibility labs
 
 The repository contains reproducible, local-only labs for the official Apache
-James memory image and a JMAP-enabled Cyrus build:
+James memory image, a JMAP-enabled Cyrus build, and the provider-neutral
+generic profile:
 
 ```bash
 npm run build
 scripts/compatibility/run-apache-james.sh
 scripts/compatibility/run-cyrus.sh
+npm run compatibility:generic-fixture
 ```
 
-Both run the non-mutating `full` probe against a disposable server, seed only a
-local mailbox, and clean up their containers. The weekly GitHub workflow
-publishes versioned, redacted evidence artifacts. Live Fastmail, Stalwart, and
-other-server checks use GitHub Environments so credentials never enter the
-repository. See [JMAP compatibility checks](docs/compatibility.md).
+All run the non-mutating `full` probe against disposable targets. The real
+server labs seed only a local mailbox and clean up their containers. The weekly
+GitHub workflow publishes versioned, redacted evidence artifacts. Live
+Fastmail, Stalwart, and other-server checks use GitHub Environments so
+credentials never enter the repository.
+
+`npm run compatibility:evidence` checks the durable reviewed history against
+the required Stalwart, Fastmail, Cyrus, Apache James, and generic profiles. It
+fails while a profile is missing and does not count advertised state-changing
+methods as verified. See [JMAP compatibility checks](docs/compatibility.md).
 
 ## Runtime status and evaluation
 

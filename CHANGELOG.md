@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a machine-checked five-profile safe compatibility evidence policy,
+  deterministic generic RFC fixture, and current full-scope evidence for
+  Stalwart 0.16.12, Cyrus 3.13.6, and Apache James 3.9.0.
 - Begin the deliberate-composition milestone without changing the stable
   package version.
 - Expose sending identities and allow an agent to save a plain-text draft with

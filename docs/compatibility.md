@@ -125,11 +125,11 @@ history survives workflow artifact expiry.
 
 | Provider | Official position | Project verification |
 |---|---|---|
-| Stalwart | JMAP Core/Mail, Submission, upload/download, and push are available | Production read/poll/search verified; a versioned live full-scope report remains the release gate |
+| Stalwart | JMAP Core/Mail, Submission, upload/download, and push are available | Stalwart 0.16.12 production service: `full` live safe-probe verified on 2026-07-30 |
 | Fastmail | JMAP Mail and Submission are supported with bearer tokens or OAuth | Live report pending a dedicated test account |
-| Cyrus IMAP | JMAP must be compiled/configured; Basic authentication is documented | Cyrus 3.13.6 official source: `full` lab verified on 2026-07-29 |
-| Apache James | JMAP is experimental and only some official server packages enable it | Official `apache/james:memory-3.9.0`: `full` lab verified on 2026-07-29; polling uses the snapshot fallback because `Email/queryChanges` returns `unknownMethod` |
-| Other JMAP servers | Must advertise the RFC capabilities required by the selected scope | Use the `generic` profile and attach the redacted JSON report |
+| Cyrus IMAP | JMAP must be compiled/configured; Basic authentication is documented | Cyrus 3.13.6 official source: `full` lab reverified on 2026-07-30 |
+| Apache James | JMAP is experimental and only some official server packages enable it | Official `apache/james:memory-3.9.0`: `full` lab reverified on 2026-07-30; polling uses the snapshot fallback because `Email/queryChanges` returns `unknownMethod` |
+| Other JMAP servers | Must advertise the RFC capabilities required by the selected scope | The generic RFC fixture runs in the official lab workflow; use the `generic` live profile for a concrete additional server |
 
 Fixture tests validate classification logic; they are not server verification.
 The provider table always names the strongest evidence level actually reached.
@@ -152,9 +152,23 @@ environment by digest. It configures JMAP, creates one local IMAP mailbox, and
 uses a loopback-only SMTP sink so Submission can be advertised without any
 external delivery path.
 
-The `JMAP compatibility (official labs)` workflow runs both at `full` scope
-weekly and on demand. A change in a server image, source tag, JMAP behavior, or
-the channel's compatibility layer therefore becomes a visible failing check.
+The `JMAP compatibility (official labs)` workflow runs all three at `full` scope
+weekly and on demand. It also runs the provider-neutral `generic` profile
+against a deterministic RFC 8620/8621 fixture. A change in a server image,
+source tag, generic capability behavior, or the channel's compatibility layer
+therefore becomes a visible failing check.
+
+`npm run compatibility:evidence` evaluates the reviewed evidence directory
+against the five-profile policy in
+[`compatibility-requirements.json`](../compatibility-requirements.json). It
+fails until Stalwart, Fastmail, Cyrus, Apache James, and the generic profile all
+have evidence at or above their required level. Use `--source-revision <sha>`
+when evaluating one exact release candidate.
+
+This matrix is deliberately named `safe-profile-compatibility`. Passing it
+does not complete the 0.5 composition contract: methods classified only as
+`advertised` still require a separately authorized, disposable state-changing
+contract suite.
 
 ## Live compatibility workflow
 

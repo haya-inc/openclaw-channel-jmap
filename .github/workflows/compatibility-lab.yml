@@ -16,12 +16,19 @@ jobs:
         include:
           - server: apache-james
             version: 3.9.0
+            level: lab
             artifact: apache/james:memory-3.9.0@sha256:c7d6172292a902ca7be5f16dace658f42d31bfca62a0a38598bee7a6dab09434
             script: scripts/compatibility/run-apache-james.sh
           - server: cyrus
             version: 3.13.6
+            level: lab
             artifact: cyrus-imapd@248be58c89fc7f841e5117a4269c8e05ac9a93ea built with cyrusimap/cyrus-docker@sha256:2230f54eff887845d81a51e9c35362b66d6e5c6cbcc2825f84d44678a5871a3d
             script: scripts/compatibility/run-cyrus.sh
+          - server: generic
+            version: fixture-v1
+            level: fixture
+            artifact: openclaw-channel-jmap:generic-rfc8620-rfc8621-fixture-v1
+            script: scripts/compatibility/run-generic-fixture.mjs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +57,7 @@ jobs:
           node scripts/compatibility/create-evidence.mjs \
             --report "artifacts/${{ matrix.server }}/report.json" \
             --output "artifacts/${{ matrix.server }}/evidence.json" \
-            --level lab \
+            --level "${{ matrix.level }}" \
             --server-version "${{ matrix.version }}" \
             --artifact "${{ matrix.artifact }}" \
             --source-revision "${GITHUB_SHA}"
