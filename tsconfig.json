@@ -13,6 +13,6 @@
     "sourceMap": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["index.ts", "src/**/*.ts"],
+  "include": ["index.ts", "setup-entry.ts", "src/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.integration.test.ts"]
 }

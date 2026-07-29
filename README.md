@@ -28,6 +28,31 @@ JMAP servers such as:
 
 Provider differences and test reports are welcome.
 
+## Compatibility checker
+
+Compatibility is verified from the live JMAP Session and safe method calls,
+not inferred from the server name.
+
+```bash
+openclaw jmap compatibility \
+  --account default \
+  --server stalwart \
+  --scope full \
+  --json
+```
+
+The same probe can run independently in CI:
+
+```bash
+openclaw-jmap-compat --server generic --scope read --json
+```
+
+It supports `stalwart`, `fastmail`, `cyrus`, `apache-james`, and `generic`
+profiles with `read`, `manage`, `send`, and `full` requirement scopes. The
+standard probe never sends mail, changes mailbox state, reads message bodies,
+or exposes mailbox identifiers. See
+[JMAP compatibility checks](docs/compatibility.md).
+
 ## Features
 
 - OpenClaw `jmap` channel with direct and thread conversations
@@ -77,7 +102,7 @@ openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 For a reproducible deployment, pin a release tag or commit:
 
 ```bash
-openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.1.5
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.2.0
 ```
 
 Restart the OpenClaw gateway after changing the plugin or channel

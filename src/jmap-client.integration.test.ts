@@ -101,6 +101,48 @@ describe("JmapClient full chain", () => {
     expect(server.pendingResponses).toBe(0);
   });
 
+  it("keeps Mail-only accounts readable and fails sending before creating a draft", async () => {
+    server.setSession({
+      capabilities: {
+        "urn:ietf:params:jmap:core": {},
+        [JMAP_MAIL]: {},
+      },
+      primaryAccounts: {
+        [JMAP_MAIL]: "acc-mail",
+      },
+      accounts: {
+        "acc-mail": {
+          accountCapabilities: {
+            [JMAP_MAIL]: {},
+          },
+        },
+      },
+    });
+    server.enqueueMethod("Mailbox/get", {
+      list: [{ id: "mbox-inbox", role: "inbox", name: "Inbox" }],
+    });
+    const client = new JmapClient({
+      sessionUrl: server.sessionUrl,
+      token: "test-token",
+    });
+
+    await client.init();
+
+    expect(client.state.submissionAccountId).toBeUndefined();
+    expect(server.getCalls("Identity/get")).toHaveLength(0);
+    await expect(
+      client.sendToAddress({
+        toEmail: "owner@example.com",
+        subject: "Should not send",
+        text: "This message must never be created.",
+      }),
+    ).rejects.toMatchObject({
+      name: "Error",
+      type: "accountNotFound",
+    });
+    expect(server.getCalls("Email/set")).toHaveLength(0);
+  });
+
   it("queries inbox state, queryChanges, and fetches emails", async () => {
     const { client, mailAccountId } = await bootstrapClient(server);
     server.enqueueMethod("Email/query", {

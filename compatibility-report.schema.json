@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haya-inc/openclaw-channel-jmap/blob/main/compatibility-report.schema.json",
+  "title": "openclaw-channel-jmap compatibility report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "serverProfile",
+    "serverLabel",
+    "scope",
+    "accountId",
+    "authMode",
+    "verdict",
+    "advertisedCapabilities",
+    "checks",
+    "features",
+    "probePolicy",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "serverProfile": {
+      "enum": ["stalwart", "fastmail", "cyrus", "apache-james", "generic"]
+    },
+    "serverLabel": {
+      "type": "string"
+    },
+    "scope": {
+      "enum": ["read", "manage", "send", "full"]
+    },
+    "accountId": {
+      "type": "string"
+    },
+    "authMode": {
+      "enum": ["basic", "bearer"]
+    },
+    "verdict": {
+      "enum": ["compatible", "partial", "incompatible", "unverified"]
+    },
+    "advertisedCapabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "required", "evidence", "code"],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": ["pass", "fail", "skip"]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "enum": ["invoked", "advertised", "not-advertised", "not-run"]
+          },
+          "code": {
+            "type": "string"
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receivePolling",
+        "search",
+        "read",
+        "thread",
+        "update",
+        "send",
+        "push",
+        "attachmentDownload",
+        "attachmentUpload"
+      ],
+      "properties": {
+        "receivePolling": {
+          "$ref": "#/$defs/featureStatus"
+        },
+        "search": {
+          "$ref": "#/$defs/featureStatus"
+        },
+        "read": {
+          "$ref": "#/$defs/featureStatus"
+        },
+        "thread": {
+          "$ref": "#/$defs/featureStatus"
+        },
+        "update": {
+          "$ref": "#/$defs/featureStatus"
+        },
+        "send": {
+          "$ref": "#/$defs/featureStatus"
+        },
+        "push": {
+          "$ref": "#/$defs/featureStatus"
+        },
+        "attachmentDownload": {
+          "$ref": "#/$defs/featureStatus"
+        },
+        "attachmentUpload": {
+          "$ref": "#/$defs/featureStatus"
+        }
+      }
+    },
+    "probePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sideEffectsPerformed",
+        "messageBodiesRead",
+        "messageIdentifiersExposed",
+        "outboundDeliveryVerified"
+      ],
+      "properties": {
+        "sideEffectsPerformed": {
+          "const": false
+        },
+        "messageBodiesRead": {
+          "const": false
+        },
+        "messageIdentifiersExposed": {
+          "const": false
+        },
+        "outboundDeliveryVerified": {
+          "const": false
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "featureStatus": {
+      "enum": ["verified", "advertised", "unsupported", "unverified"]
+    }
+  }
+}

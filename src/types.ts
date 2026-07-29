@@ -84,6 +84,17 @@ export type JmapMailbox = {
   id: string;
   role?: JmapMailboxRole;
   name?: string;
+  myRights?: {
+    mayReadItems?: boolean;
+    mayAddItems?: boolean;
+    mayRemoveItems?: boolean;
+    maySetSeen?: boolean;
+    maySetKeywords?: boolean;
+    mayCreateChild?: boolean;
+    mayRename?: boolean;
+    mayDelete?: boolean;
+    maySubmit?: boolean;
+  };
 };
 
 export type JmapEmailAddress = {

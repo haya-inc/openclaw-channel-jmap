@@ -1,13 +1,17 @@
 import { once } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { JMAP_MAIL, JMAP_SUBMISSION } from "../types.js";
+import { JMAP_CORE, JMAP_MAIL, JMAP_SUBMISSION } from "../types.js";
 
 type JmapMethodCallTuple = [string, Record<string, unknown>, string];
 type JmapMethodResponseTuple = [string, Record<string, unknown>, string];
 
 type JmapSession = {
   apiUrl: string;
+  downloadUrl?: string;
+  uploadUrl?: string;
+  eventSourceUrl?: string;
+  capabilities: Record<string, unknown>;
   username?: string;
   primaryAccounts: Record<string, string>;
   accounts: Record<string, { accountCapabilities?: Record<string, unknown> }>;
@@ -257,6 +261,14 @@ export class JmapMockServer {
     const baseAccountId = "acc-1";
     return {
       apiUrl: this.apiUrl,
+      downloadUrl: `${this.origin}/download/{accountId}/{blobId}/{name}`,
+      uploadUrl: `${this.origin}/upload/{accountId}`,
+      eventSourceUrl: `${this.origin}/events`,
+      capabilities: {
+        [JMAP_CORE]: {},
+        [JMAP_MAIL]: {},
+        [JMAP_SUBMISSION]: {},
+      },
       username: "bot@example.com",
       primaryAccounts: {
         [JMAP_MAIL]: baseAccountId,

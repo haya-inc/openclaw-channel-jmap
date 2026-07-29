@@ -23,6 +23,11 @@ describe("JmapClient authentication and mutations", () => {
           return jsonResponse({
             apiUrl: "https://mail.example.com/jmap",
             username: "miyu@example.com",
+            capabilities: {
+              "urn:ietf:params:jmap:core": {},
+              "urn:ietf:params:jmap:mail": {},
+              "urn:ietf:params:jmap:submission": {},
+            },
             primaryAccounts: {
               "urn:ietf:params:jmap:mail": "mail",
               "urn:ietf:params:jmap:submission": "mail",
@@ -31,6 +36,7 @@ describe("JmapClient authentication and mutations", () => {
               mail: {
                 accountCapabilities: {
                   "urn:ietf:params:jmap:mail": {},
+                  "urn:ietf:params:jmap:submission": {},
                 },
               },
             },

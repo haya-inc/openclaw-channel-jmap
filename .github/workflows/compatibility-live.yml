@@ -1,0 +1,69 @@
+name: JMAP compatibility (live)
+
+on:
+  workflow_dispatch:
+    inputs:
+      server:
+        description: JMAP server profile
+        required: true
+        type: choice
+        options:
+          - stalwart
+          - fastmail
+          - cyrus
+          - apache-james
+          - generic
+      scope:
+        description: Required compatibility scope
+        required: true
+        default: read
+        type: choice
+        options:
+          - read
+          - manage
+          - send
+          - full
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    environment: compatibility-${{ inputs.server }}
+    env:
+      JMAP_SESSION_URL: ${{ secrets.JMAP_SESSION_URL }}
+      JMAP_AUTH_MODE: ${{ vars.JMAP_AUTH_MODE }}
+      JMAP_USERNAME: ${{ secrets.JMAP_USERNAME }}
+      JMAP_PASSWORD: ${{ secrets.JMAP_PASSWORD }}
+      JMAP_API_TOKEN: ${{ secrets.JMAP_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - id: probe
+        name: Run content-free compatibility probe
+        shell: bash
+        run: |
+          set +e
+          node dist/src/compatibility-bin.js \
+            --server "${{ inputs.server }}" \
+            --scope "${{ inputs.scope }}" \
+            --json > compatibility-report.json
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jmap-compatibility-${{ inputs.server }}-${{ inputs.scope }}
+          path: compatibility-report.json
+          if-no-files-found: error
+      - name: Enforce compatibility verdict
+        env:
+          PROBE_EXIT_CODE: ${{ steps.probe.outputs.exit_code }}
+        run: test "$PROBE_EXIT_CODE" -eq 0

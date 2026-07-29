@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0
+
+- Add a content-free, non-mutating compatibility checker for Stalwart,
+  Fastmail, Cyrus IMAP, Apache James, and other standards-based JMAP servers.
+- Add `read`, `manage`, `send`, and `full` compatibility scopes, stable JSON
+  reports, a report schema, OpenClaw and standalone CLIs, and a live CI
+  workflow.
+- Negotiate request capabilities per method and keep Mail-only servers usable
+  when JMAP Submission or Identity is unavailable.
+- Adopt OpenClaw's channel entry helper and a lightweight setup entry.
+
 ## 0.1.5
 
 - Persist anonymous tool and outbound activity in append-only shared OpenClaw

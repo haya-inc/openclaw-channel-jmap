@@ -1,7 +1,16 @@
 {
   "name": "openclaw-channel-jmap",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "A safe, multi-account JMAP email channel and mail tools for OpenClaw",
+  "keywords": [
+    "openclaw",
+    "jmap",
+    "email",
+    "stalwart",
+    "fastmail",
+    "cyrus",
+    "apache-james"
+  ],
   "type": "module",
   "license": "MIT",
   "author": "Haya Inc.",
@@ -19,11 +28,16 @@
   "exports": {
     ".": "./dist/index.js"
   },
+  "bin": {
+    "openclaw-jmap-compat": "./dist/src/compatibility-bin.js"
+  },
   "files": [
     "dist",
     "LICENSE",
     "NOTICE",
     "README.md",
+    "compatibility-report.schema.json",
+    "docs",
     "openclaw.plugin.json"
   ],
   "scripts": {
@@ -43,6 +57,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "openclaw": "2026.7.2-beta.3",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
@@ -54,6 +70,7 @@
     "extensions": [
       "./dist/index.js"
     ],
+    "setupEntry": "./dist/setup-entry.js",
     "channel": {
       "id": "jmap",
       "label": "JMAP Email",
