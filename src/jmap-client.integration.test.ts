@@ -962,6 +962,64 @@ describe("JmapClient full chain", () => {
     expect(server.getCalls("EmailSubmission/set")).toHaveLength(0);
   });
 
+  it("accepts a plain-text part mirrored in htmlBody as allowed by RFC 8621", async () => {
+    const { client } = await bootstrapClient(server);
+    enqueueDraft(server, {
+      htmlBody: [{ partId: "body-1", type: "text/plain" }],
+      bodyValues: { "body-1": { value: "Stalwart plain-text draft" } },
+    });
+
+    await expect(
+      client.previewDraft({
+        emailId: "draft-1",
+        identityId: "identity-1",
+      }),
+    ).resolves.toMatchObject({
+      text: "Stalwart plain-text draft",
+      previewToken: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+    });
+  });
+
+  it("rejects an actual HTML alternative from the exact plain-text draft flow", async () => {
+    const { client } = await bootstrapClient(server);
+    enqueueDraft(server, {
+      htmlBody: [{ partId: "html-1", type: "text/html" }],
+      bodyValues: {
+        "body-1": { value: "Plain text" },
+        "html-1": { value: "<p>HTML text</p>" },
+      },
+    });
+
+    await expect(
+      client.previewDraft({
+        emailId: "draft-1",
+        identityId: "identity-1",
+      }),
+    ).rejects.toMatchObject({
+      type: "unsupported",
+      message: "Safe draft preview currently supports plain-text-only drafts",
+    });
+  });
+
+  it("rejects an HTML-only draft from the exact plain-text draft flow", async () => {
+    const { client } = await bootstrapClient(server);
+    enqueueDraft(server, {
+      textBody: [],
+      htmlBody: [{ partId: "html-1", type: "text/html" }],
+      bodyValues: { "html-1": { value: "<p>HTML text</p>" } },
+    });
+
+    await expect(
+      client.previewDraft({
+        emailId: "draft-1",
+        identityId: "identity-1",
+      }),
+    ).rejects.toMatchObject({
+      type: "unsupported",
+      message: "Safe draft preview currently supports plain-text-only drafts",
+    });
+  });
+
   it("replaces a previewed immutable draft before removing the original", async () => {
     const { client, mailAccountId } = await bootstrapClient(server);
     const attachment = {

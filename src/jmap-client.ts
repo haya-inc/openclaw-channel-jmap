@@ -203,13 +203,14 @@ function canonicalDraftAddresses(
 
 function extractExactDraftText(email: JmapEmail): string {
   const textParts = ensureArray(email.textBody);
-  if (ensureArray(email.htmlBody).length > 0) {
-    throw new JmapMethodError(
-      "unsupported",
-      "Safe draft preview currently supports plain-text-only drafts",
-    );
-  }
+  const htmlParts = ensureArray(email.htmlBody);
   if (textParts.length === 0) {
+    if (htmlParts.length > 0) {
+      throw new JmapMethodError(
+        "unsupported",
+        "Safe draft preview currently supports plain-text-only drafts",
+      );
+    }
     return "";
   }
   if (
@@ -219,6 +220,19 @@ function extractExactDraftText(email: JmapEmail): string {
     throw new JmapMethodError(
       "unsupported",
       "Safe draft preview requires exactly one text/plain body part",
+    );
+  }
+  const textPart = textParts[0];
+  const htmlBodyMirrorsTextPart =
+    htmlParts.length === 0 ||
+    (htmlParts.length === 1 &&
+      Boolean(textPart?.partId) &&
+      htmlParts[0]?.partId === textPart?.partId &&
+      htmlParts[0]?.type?.toLowerCase() === "text/plain");
+  if (!htmlBodyMirrorsTextPart) {
+    throw new JmapMethodError(
+      "unsupported",
+      "Safe draft preview currently supports plain-text-only drafts",
     );
   }
   return textParts
