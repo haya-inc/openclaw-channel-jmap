@@ -1,4 +1,4 @@
-export const RFC8621_PLUGIN_RELEASE = "0.4.0";
+export const RFC8621_PLUGIN_RELEASE = "0.4.1";
 export const RFC8621_COVERAGE = [
     { method: "Mailbox/get", status: "implemented", exposure: "tool", risk: "read", targetRelease: "0.4.0" },
     { method: "Mailbox/changes", status: "planned", exposure: "none", risk: "read", targetRelease: "0.6.0" },

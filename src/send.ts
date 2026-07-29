@@ -31,7 +31,7 @@ async function resolveClient(params: {
   }
 
   const core = getJmapRuntime();
-  const cfg = params.cfg ?? (core.config.loadConfig() as CoreConfig);
+  const cfg = params.cfg ?? (core.config.current() as unknown as CoreConfig);
   const account = resolveJmapAccount({ cfg, accountId: params.accountId });
   if (!account.configured || !account.token.trim()) {
     throw new Error(

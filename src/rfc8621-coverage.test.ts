@@ -57,7 +57,7 @@ describe("RFC 8621 coverage ledger", () => {
     expect(coverage).toMatchObject({
       schemaVersion: 1,
       standard: "RFC 8621",
-      updatedForRelease: "0.4.0",
+      updatedForRelease: "0.4.1",
     });
     expect(coverage.updatedForRelease).toBe(RFC8621_PLUGIN_RELEASE);
     expect(coverage.methods).toEqual(RFC8621_COVERAGE);

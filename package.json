@@ -1,6 +1,6 @@
 {
   "name": "openclaw-channel-jmap",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "A safe, multi-account JMAP email channel and mail tools for OpenClaw",
   "keywords": [
     "openclaw",

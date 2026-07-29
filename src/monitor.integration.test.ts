@@ -136,7 +136,7 @@ describe("monitorJmapProvider polling chain", () => {
   function configureRuntime(config: CoreConfig, activityRecord: ReturnType<typeof vi.fn>) {
     setJmapRuntime({
       config: {
-        loadConfig: () => config,
+        current: () => config,
       },
       logging: {
         getChildLogger: () => ({

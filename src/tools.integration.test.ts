@@ -71,7 +71,7 @@ describe("JMAP agent tools full chain", () => {
     info = vi.fn();
     setJmapRuntime({
       config: {
-        loadConfig: () => config,
+        current: () => config,
       },
       logging: {
         getChildLogger: () => ({

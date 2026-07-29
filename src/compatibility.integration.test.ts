@@ -151,7 +151,7 @@ describe("JMAP compatibility profiles", () => {
       attachmentUpload: "advertised",
     });
     expect(report.rfc8621).toMatchObject({
-      pluginRelease: "0.4.0",
+      pluginRelease: "0.4.1",
       totalMethods: 26,
     });
     expect(report.rfc8621.methods).toHaveLength(26);

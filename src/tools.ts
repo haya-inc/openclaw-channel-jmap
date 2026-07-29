@@ -58,7 +58,7 @@ async function resolveClient(accountId?: string): Promise<{
   account: JmapResolvedAccount;
   client: JmapClient;
 }> {
-  const cfg = getJmapRuntime().config.loadConfig() as CoreConfig;
+  const cfg = getJmapRuntime().config.current() as unknown as CoreConfig;
   const account = resolveJmapAccount({ cfg, accountId });
   if (!account.configured || !account.token) {
     throw new Error(`JMAP account "${account.accountId}" is not configured`);
@@ -168,7 +168,7 @@ async function runAuditedJmapTool<T>(
   params: Record<string, unknown>,
   operation: () => Promise<T>,
 ): Promise<T> {
-  const cfg = getJmapRuntime().config.loadConfig() as CoreConfig;
+  const cfg = getJmapRuntime().config.current() as unknown as CoreConfig;
   const account = resolveJmapAccount({
     cfg,
     accountId: optionalString(params.accountId),

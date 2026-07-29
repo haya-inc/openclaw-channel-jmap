@@ -265,7 +265,7 @@ async function pollLoop(params: {
 
 export async function monitorJmapProvider(opts: JmapMonitorOptions): Promise<{ stop: () => void }> {
   const core = getJmapRuntime();
-  const config = opts.config ?? (core.config.loadConfig() as CoreConfig);
+  const config = opts.config ?? (core.config.current() as unknown as CoreConfig);
   const account = resolveJmapAccount({
     cfg: config,
     accountId: opts.accountId,

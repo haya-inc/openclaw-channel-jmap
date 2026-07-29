@@ -23,7 +23,7 @@ function createConfig(server: JmapMockServer): CoreConfig {
 function configureRuntime(config: CoreConfig, activityRecord: ReturnType<typeof vi.fn>) {
   setJmapRuntime({
     config: {
-      loadConfig: () => config,
+      current: () => config,
     },
     channel: {
       activity: {

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "standard": "RFC 8621",
-  "updatedForRelease": "0.4.0",
+  "updatedForRelease": "0.4.1",
   "methods": [
     { "method": "Mailbox/get", "status": "implemented", "exposure": "tool", "risk": "read", "targetRelease": "0.4.0" },
     { "method": "Mailbox/changes", "status": "planned", "exposure": "none", "risk": "read", "targetRelease": "0.6.0" },

@@ -35,7 +35,7 @@ function readEmailIds(params) {
     return ids;
 }
 async function resolveClient(accountId) {
-    const cfg = getJmapRuntime().config.loadConfig();
+    const cfg = getJmapRuntime().config.current();
     const account = resolveJmapAccount({ cfg, accountId });
     if (!account.configured || !account.token) {
         throw new Error(`JMAP account "${account.accountId}" is not configured`);
@@ -125,7 +125,7 @@ function emailResult(email, options) {
 }
 const accountIdParam = Type.Optional(Type.String({ description: "Configured JMAP account id. Uses the default account when omitted." }));
 async function runAuditedJmapTool(toolName, params, operation) {
-    const cfg = getJmapRuntime().config.loadConfig();
+    const cfg = getJmapRuntime().config.current();
     const account = resolveJmapAccount({
         cfg,
         accountId: optionalString(params.accountId),

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Use OpenClaw's current runtime configuration snapshot instead of the
+  deprecated on-demand config loader.
+
 ## 0.4.0
 
 - Add mailbox listing and mailbox selection by id, standard role, or exact name,

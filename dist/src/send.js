@@ -22,7 +22,7 @@ async function resolveClient(params) {
         return { accountId: normalizedAccountId, client: existing };
     }
     const core = getJmapRuntime();
-    const cfg = params.cfg ?? core.config.loadConfig();
+    const cfg = params.cfg ?? core.config.current();
     const account = resolveJmapAccount({ cfg, accountId: params.accountId });
     if (!account.configured || !account.token.trim()) {
         throw new Error(`JMAP is not configured for account "${account.accountId}" (set channels.jmap.apiToken/apiTokenFile or JMAP_API_TOKEN/JMAIL_API_TOKEN).`);
