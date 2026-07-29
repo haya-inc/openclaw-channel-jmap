@@ -30,7 +30,8 @@
   },
   "bin": {
     "openclaw-jmap-compat": "./dist/src/compatibility-bin.js",
-    "openclaw-jmap-draft-contract": "./dist/src/stateful-contract-bin.js"
+    "openclaw-jmap-draft-contract": "./dist/src/stateful-contract-bin.js",
+    "openclaw-jmap-outbound-contract": "./dist/src/outbound-contract-bin.js"
   },
   "files": [
     "dist",
@@ -43,16 +44,22 @@
     "compatibility-evidence.schema.json",
     "compatibility-report.schema.json",
     "stateful-contract-report.schema.json",
+    "outbound-contract-report.schema.json",
+    "composition-evidence.schema.json",
+    "composition-requirements.json",
     "docs",
     "openclaw.plugin.json"
   ],
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
-    "check": "npm run typecheck && npm test && npm run build && npm run compatibility:evidence:check && npm pack --dry-run",
+    "check": "npm run typecheck && npm test && npm run build && npm run compatibility:evidence:check && npm run composition:evidence:check && npm pack --dry-run",
     "compatibility:evidence": "node scripts/compatibility/verify-evidence.mjs",
     "compatibility:evidence:check": "node scripts/compatibility/verify-evidence.mjs --allow-incomplete",
+    "composition:evidence": "node scripts/compatibility/verify-contract-evidence.mjs",
+    "composition:evidence:check": "node scripts/compatibility/verify-contract-evidence.mjs --allow-incomplete",
     "compatibility:generic-fixture": "node scripts/compatibility/run-generic-fixture.mjs",
     "compatibility:draft-contract": "node dist/src/stateful-contract-bin.js",
+    "compatibility:outbound-contract": "node dist/src/outbound-contract-bin.js",
     "prepare": "npm run build",
     "prepack": "npm run build",
     "test": "vitest run",

@@ -203,6 +203,33 @@ client check for that standard representation. Outbound submission, delivery,
 scheduling, and cancellation remain a third, separately authorized evidence
 layer.
 
+## Self-addressed outbound contract
+
+The outbound contract crosses `EmailSubmission/set`, so it requires a distinct
+acknowledgement and runs only on disposable or dedicated test accounts:
+
+```bash
+export JMAP_OUTBOUND_TEST_ALLOW_DELIVERY=self-only
+export JMAP_TEST_ACCOUNT_CLASS=dedicated-test
+
+openclaw-jmap-outbound-contract --server stalwart --json
+```
+
+The runner selects a concrete Identity with no external default Bcc, creates
+and exactly previews a draft addressed only to that Identity, submits it,
+checks status and query history when the server retains them, and exercises
+delayed-send and pending-only cancellation behavior. Unsupported, immediately
+expired, and uncancelable server behavior is recorded explicitly and fails
+closed. SMTP acceptance is never promoted to a final-delivery claim.
+
+The report conforms to
+[`outbound-contract-report.schema.json`](../outbound-contract-report.schema.json).
+Both contract report types can be packaged with target artifact, evidence
+level, exact source revision, and canonical report hash using
+`create-contract-evidence.mjs`. `npm run composition:evidence` checks the
+durable history against
+[`composition-requirements.json`](../composition-requirements.json).
+
 ## Live compatibility workflow
 
 The repository workflow `JMAP compatibility (live)` uses a GitHub Environment
@@ -214,4 +241,6 @@ named `compatibility-<profile>`. Store the following as environment secrets:
 Optionally set the environment variable `JMAP_AUTH_MODE` to `basic` or
 `bearer`. Fastmail defaults to its public Session URL and bearer mode, so its
 environment only needs a dedicated API token with Mail and Submission access.
-The workflow uploads only the redacted JSON report and its evidence wrapper.
+Set `run_draft_contract` or `run_outbound_contract` only for a dedicated
+account whose side effects are authorized. The workflow uploads only redacted
+reports and evidence wrappers.

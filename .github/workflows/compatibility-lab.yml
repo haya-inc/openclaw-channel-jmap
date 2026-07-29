@@ -47,6 +47,7 @@ jobs:
         env:
           COMPATIBILITY_REPORT: artifacts/${{ matrix.server }}/report.json
           STATEFUL_CONTRACT_REPORT: ${{ matrix.stateful && format('artifacts/{0}/stateful-contract-report.json', matrix.server) || '' }}
+          OUTBOUND_CONTRACT_REPORT: ${{ matrix.stateful && format('artifacts/{0}/outbound-contract-report.json', matrix.server) || '' }}
           JMAP_COMPATIBILITY_SCOPE: full
         shell: bash
         run: |
@@ -61,6 +62,23 @@ jobs:
           node scripts/compatibility/create-evidence.mjs \
             --report "artifacts/${{ matrix.server }}/report.json" \
             --output "artifacts/${{ matrix.server }}/evidence.json" \
+            --level "${{ matrix.level }}" \
+            --server-version "${{ matrix.version }}" \
+            --artifact "${{ matrix.artifact }}" \
+            --source-revision "${GITHUB_SHA}"
+      - name: Package composition contract evidence
+        if: always() && matrix.stateful
+        run: |
+          node scripts/compatibility/create-contract-evidence.mjs \
+            --report "artifacts/${{ matrix.server }}/stateful-contract-report.json" \
+            --output "artifacts/${{ matrix.server }}/stateful-contract-evidence.json" \
+            --level "${{ matrix.level }}" \
+            --server-version "${{ matrix.version }}" \
+            --artifact "${{ matrix.artifact }}" \
+            --source-revision "${GITHUB_SHA}"
+          node scripts/compatibility/create-contract-evidence.mjs \
+            --report "artifacts/${{ matrix.server }}/outbound-contract-report.json" \
+            --output "artifacts/${{ matrix.server }}/outbound-contract-evidence.json" \
             --level "${{ matrix.level }}" \
             --server-version "${{ matrix.version }}" \
             --artifact "${{ matrix.artifact }}" \

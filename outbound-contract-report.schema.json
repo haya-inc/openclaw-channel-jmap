@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haya-inc/openclaw-channel-jmap/blob/main/outbound-contract-report.schema.json",
+  "title": "OpenClaw JMAP self-addressed outbound contract report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "serverProfile",
+    "contract",
+    "verdict",
+    "checks",
+    "observations",
+    "probePolicy"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "serverProfile": { "type": "string", "minLength": 1 },
+    "contract": { "const": "self-addressed-submission-v1" },
+    "verdict": { "enum": ["compatible", "incompatible"] },
+    "checks": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status"],
+        "properties": {
+          "id": {
+            "enum": [
+              "session",
+              "identity-safety",
+              "self-draft-create",
+              "exact-preview",
+              "explicit-submit",
+              "submission-get",
+              "submission-query",
+              "delayed-send-policy",
+              "cancellation-boundary"
+            ]
+          },
+          "status": { "enum": ["pass", "fail", "not-run"] },
+          "errorType": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptanceObserved",
+        "submissionStatusObserved",
+        "deliveryStatusObserved",
+        "submissionGet",
+        "submissionQuery",
+        "immediateUndoStatus",
+        "scheduling"
+      ],
+      "properties": {
+        "acceptanceObserved": { "type": "boolean" },
+        "submissionStatusObserved": { "type": "boolean" },
+        "deliveryStatusObserved": { "type": "boolean" },
+        "submissionGet": {
+          "enum": ["observed", "unsupported", "unavailable"]
+        },
+        "submissionQuery": {
+          "enum": ["observed", "unsupported", "unavailable"]
+        },
+        "immediateUndoStatus": {
+          "enum": ["pending", "final", "canceled", "other", "unknown"]
+        },
+        "scheduling": {
+          "enum": ["canceled", "uncancelable", "unsupported", "not-run"]
+        }
+      }
+    },
+    "probePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sideEffectsPerformed",
+        "selfAddressedOnly",
+        "externalRecipientsUsed",
+        "submissionAttempted",
+        "finalDeliveryClaimed",
+        "cleanupConfirmed"
+      ],
+      "properties": {
+        "sideEffectsPerformed": { "const": true },
+        "selfAddressedOnly": { "const": true },
+        "externalRecipientsUsed": { "const": false },
+        "submissionAttempted": { "type": "boolean" },
+        "finalDeliveryClaimed": { "const": false },
+        "cleanupConfirmed": { "type": "boolean" }
+      }
+    }
+  }
+}

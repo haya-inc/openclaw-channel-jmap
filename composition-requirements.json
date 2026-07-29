@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "claim": "deliberate-composition-contracts",
+  "description": "Minimum durable evidence for recipient-free draft lifecycle and isolated self-addressed submission behavior.",
+  "requirements": [
+    { "contract": "draft-lifecycle-v1", "serverProfile": "stalwart", "minimumVerificationLevel": "live" },
+    { "contract": "draft-lifecycle-v1", "serverProfile": "fastmail", "minimumVerificationLevel": "live" },
+    { "contract": "draft-lifecycle-v1", "serverProfile": "cyrus", "minimumVerificationLevel": "lab" },
+    { "contract": "draft-lifecycle-v1", "serverProfile": "apache-james", "minimumVerificationLevel": "lab" },
+    { "contract": "draft-lifecycle-v1", "serverProfile": "generic", "minimumVerificationLevel": "fixture" },
+    { "contract": "self-addressed-submission-v1", "serverProfile": "stalwart", "minimumVerificationLevel": "live" },
+    { "contract": "self-addressed-submission-v1", "serverProfile": "fastmail", "minimumVerificationLevel": "live" },
+    { "contract": "self-addressed-submission-v1", "serverProfile": "cyrus", "minimumVerificationLevel": "lab" },
+    { "contract": "self-addressed-submission-v1", "serverProfile": "apache-james", "minimumVerificationLevel": "lab" },
+    { "contract": "self-addressed-submission-v1", "serverProfile": "generic", "minimumVerificationLevel": "fixture" }
+  ]
+}

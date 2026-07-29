@@ -37,6 +37,11 @@ on:
         required: true
         default: false
         type: boolean
+      run_outbound_contract:
+        description: Submit mail only to the selected identity itself
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -106,6 +111,41 @@ jobs:
           code=$?
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
+      - id: outbound_contract
+        name: Run self-addressed outbound contract
+        if: inputs.run_outbound_contract
+        env:
+          JMAP_OUTBOUND_TEST_ALLOW_DELIVERY: self-only
+          JMAP_TEST_ACCOUNT_CLASS: dedicated-test
+        shell: bash
+        run: |
+          set +e
+          node dist/src/outbound-contract-bin.js \
+            --server "${{ inputs.server }}" \
+            --json > outbound-contract-report.json
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Package draft contract evidence
+        if: always() && inputs.run_draft_contract && hashFiles('stateful-contract-report.json') != ''
+        run: |
+          node scripts/compatibility/create-contract-evidence.mjs \
+            --report stateful-contract-report.json \
+            --output stateful-contract-evidence.json \
+            --level live \
+            --server-version "${{ inputs.server_version }}" \
+            --artifact "${{ inputs.target_artifact }}" \
+            --source-revision "${GITHUB_SHA}"
+      - name: Package outbound contract evidence
+        if: always() && inputs.run_outbound_contract && hashFiles('outbound-contract-report.json') != ''
+        run: |
+          node scripts/compatibility/create-contract-evidence.mjs \
+            --report outbound-contract-report.json \
+            --output outbound-contract-evidence.json \
+            --level live \
+            --server-version "${{ inputs.server_version }}" \
+            --artifact "${{ inputs.target_artifact }}" \
+            --source-revision "${GITHUB_SHA}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -114,6 +154,9 @@ jobs:
             compatibility-report.json
             compatibility-evidence.json
             stateful-contract-report.json
+            stateful-contract-evidence.json
+            outbound-contract-report.json
+            outbound-contract-evidence.json
           if-no-files-found: error
           retention-days: 90
       - name: Enforce compatibility verdict
@@ -125,3 +168,8 @@ jobs:
         env:
           DRAFT_CONTRACT_EXIT_CODE: ${{ steps.draft_contract.outputs.exit_code }}
         run: test "$DRAFT_CONTRACT_EXIT_CODE" -eq 0
+      - name: Enforce outbound contract verdict
+        if: inputs.run_outbound_contract
+        env:
+          OUTBOUND_CONTRACT_EXIT_CODE: ${{ steps.outbound_contract.outputs.exit_code }}
+        run: test "$OUTBOUND_CONTRACT_EXIT_CODE" -eq 0

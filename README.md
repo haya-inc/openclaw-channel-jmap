@@ -356,8 +356,23 @@ npm run compatibility:draft-contract -- --server stalwart --json
 
 This contract uses no recipients and never submits mail. It creates, previews,
 replaces, re-previews, stale-token checks, and discards only its own test
-drafts, then emits a redacted report. Isolated outbound evidence remains a
-separate release gate.
+drafts, then emits a redacted report.
+
+The outbound contract has a separate acknowledgement because it crosses the
+delivery boundary. It refuses wildcard identities and identities with an
+external default Bcc, then submits only to the selected identity itself:
+
+```bash
+export JMAP_OUTBOUND_TEST_ALLOW_DELIVERY=self-only
+export JMAP_TEST_ACCOUNT_CLASS=dedicated-test
+npm run compatibility:outbound-contract -- --server stalwart --json
+```
+
+It verifies explicit submission, truthful `EmailSubmission/get` and
+`EmailSubmission/query` availability, delayed-send limits, and cancellation
+only from observable `pending` state. Acceptance is never reported as final
+delivery. `npm run composition:evidence` checks both contract layers against
+the five-profile policy.
 
 ## Runtime status and evaluation
 

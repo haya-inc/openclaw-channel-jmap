@@ -12,6 +12,7 @@ readonly LAB_PASSWORD="compat-password"
 readonly CONTAINER_NAME="openclaw-jmap-cyrus-${$}"
 readonly REPORT_PATH="${COMPATIBILITY_REPORT:-compatibility-report.json}"
 readonly STATEFUL_REPORT_PATH="${STATEFUL_CONTRACT_REPORT:-}"
+readonly OUTBOUND_REPORT_PATH="${OUTBOUND_CONTRACT_REPORT:-}"
 readonly LAB_SCOPE="${JMAP_COMPATIBILITY_SCOPE:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -174,7 +175,40 @@ if [[ -n "${STATEFUL_REPORT_PATH}" ]]; then
     "${STATEFUL_REPORT_PATH}"
 fi
 
+outbound_exit_code=0
+if [[ -n "${OUTBOUND_REPORT_PATH}" ]]; then
+  set +e
+  JMAP_OUTBOUND_TEST_ALLOW_DELIVERY=self-only \
+    JMAP_TEST_ACCOUNT_CLASS=disposable \
+    node "${REPO_ROOT}/dist/src/outbound-contract-bin.js" \
+      --server "${SERVER_PROFILE}" \
+      --json \
+      >"${OUTBOUND_REPORT_PATH}"
+  outbound_exit_code=$?
+  set -e
+  jq -e . "${OUTBOUND_REPORT_PATH}" >/dev/null
+  jq -c \
+    --arg serverVersion "${SERVER_VERSION}" \
+    --arg image "${SERVER_IMAGE}" \
+    --argjson exitCode "${outbound_exit_code}" \
+    '{
+      serverProfile,
+      serverVersion: $serverVersion,
+      image: $image,
+      contract,
+      verdict,
+      exitCode: $exitCode,
+      failedChecks: [.checks[] | select(.status != "pass")],
+      observations,
+      probePolicy
+    }' \
+    "${OUTBOUND_REPORT_PATH}"
+fi
+
 if [[ "${probe_exit_code}" -ne 0 ]]; then
   exit "${probe_exit_code}"
 fi
-exit "${stateful_exit_code}"
+if [[ "${stateful_exit_code}" -ne 0 ]]; then
+  exit "${stateful_exit_code}"
+fi
+exit "${outbound_exit_code}"

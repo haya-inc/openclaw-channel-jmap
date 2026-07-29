@@ -8,6 +8,10 @@
 - Add an explicitly authorized, recipient-free stateful draft contract probe
   and split the 0.5 cross-server release gate into safe, draft, and outbound
   evidence layers.
+- Add a self-addressed outbound contract and machine-checked composition
+  evidence policy covering explicit submission, truthful history
+  availability, delayed-send limits, and pending-only cancellation without
+  claiming final delivery.
 - Add a machine-checked five-profile safe compatibility evidence policy,
   deterministic generic RFC fixture, and current full-scope evidence for
   Stalwart 0.16.12, Cyrus 3.13.6, and Apache James 3.9.0.

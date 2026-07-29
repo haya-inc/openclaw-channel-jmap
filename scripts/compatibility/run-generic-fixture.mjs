@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { writeFile } from "node:fs/promises";
 import { runJmapCompatibilityCheck } from "../../dist/src/compatibility.js";
 import { JmapClient } from "../../dist/src/jmap-client.js";
+import { runOutboundContract } from "../../dist/src/outbound-contract.js";
 import { runStatefulDraftContract } from "../../dist/src/stateful-contract.js";
 
 const JMAP_CORE = "urn:ietf:params:jmap:core";
@@ -29,7 +30,9 @@ let origin = "";
 let emailQueryCount = 0;
 let emailStateVersion = 1;
 let nextDraftId = 1;
+let nextSubmissionId = 1;
 const drafts = new Map();
+const submissions = new Map();
 
 function emailState() {
   return `email-state-${emailStateVersion}`;
@@ -64,6 +67,7 @@ const server = createServer(async (request, response) => {
       downloadUrl: `${origin}/download/{accountId}/{blobId}/{name}`,
       uploadUrl: `${origin}/upload/{accountId}`,
       eventSourceUrl: `${origin}/events`,
+      username: "fixture@example.test",
       capabilities: {
         [JMAP_CORE]: {},
         [JMAP_MAIL]: {},
@@ -77,7 +81,12 @@ const server = createServer(async (request, response) => {
         "fixture-account": {
           accountCapabilities: {
             [JMAP_MAIL]: {},
-            [JMAP_SUBMISSION]: {},
+            [JMAP_SUBMISSION]: {
+              maxDelayedSend: 3_600,
+              submissionExtensions: {
+                FUTURERELEASE: ["HOLDFOR"],
+              },
+            },
           },
         },
       },
@@ -240,8 +249,123 @@ const server = createServer(async (request, response) => {
         {
           accountId: "fixture-account",
           state: "identity-state",
-          list: [{ id: "fixture-identity", email: "fixture@example.test" }],
+          list: [
+            {
+              id: "fixture-identity",
+              email: "fixture@example.test",
+              name: "Fixture Identity",
+              replyTo: null,
+              bcc: null,
+              textSignature: "",
+              htmlSignature: "",
+              mayDelete: false,
+            },
+          ],
           notFound: [],
+        },
+        callId,
+      ];
+    }
+    if (method === "EmailSubmission/set") {
+      const created = {};
+      const updated = {};
+      const notUpdated = {};
+      for (const [creationId, value] of Object.entries(args.create ?? {})) {
+        const email = drafts.get(value.emailId);
+        if (!email) {
+          continue;
+        }
+        const id = `fixture-submission-${nextSubmissionId}`;
+        nextSubmissionId += 1;
+        const holdFor = Number(
+          value.envelope?.mailFrom?.parameters?.HOLDFOR ?? 0,
+        );
+        const submission = {
+          id,
+          identityId: value.identityId,
+          emailId: value.emailId,
+          threadId: email.threadId,
+          sendAt:
+            holdFor > 0
+              ? new Date(Date.now() + holdFor * 1_000).toISOString()
+              : new Date().toISOString(),
+          undoStatus: holdFor > 0 ? "pending" : "final",
+          deliveryStatus:
+            holdFor > 0
+              ? null
+              : {
+                  "fixture@example.test": {
+                    delivered: "queued",
+                    smtpReply: "250 fixture accepted",
+                  },
+                },
+          dsnBlobIds: [],
+          mdnBlobIds: [],
+        };
+        submissions.set(id, submission);
+        drafts.delete(value.emailId);
+        created[creationId] = { id, threadId: submission.threadId };
+      }
+      for (const [id, patch] of Object.entries(args.update ?? {})) {
+        const submission = submissions.get(id);
+        if (!submission || submission.undoStatus !== "pending") {
+          notUpdated[id] = { type: "cannotUnsend" };
+          continue;
+        }
+        if (patch.undoStatus === "canceled") {
+          submissions.set(id, { ...submission, undoStatus: "canceled" });
+          updated[id] = null;
+        }
+      }
+      return [
+        method,
+        {
+          accountId: "fixture-account",
+          oldState: "submission-state-1",
+          newState: "submission-state-2",
+          created,
+          updated,
+          notCreated: {},
+          notUpdated,
+        },
+        callId,
+      ];
+    }
+    if (method === "EmailSubmission/get") {
+      const ids = Array.isArray(args.ids) ? args.ids : [];
+      return [
+        method,
+        {
+          accountId: "fixture-account",
+          state: "submission-state-2",
+          list: ids.flatMap((id) => {
+            const submission = submissions.get(id);
+            return submission ? [submission] : [];
+          }),
+          notFound: ids.filter((id) => !submissions.has(id)),
+        },
+        callId,
+      ];
+    }
+    if (method === "EmailSubmission/query") {
+      const requestedEmailIds = Array.isArray(args.filter?.emailIds)
+        ? new Set(args.filter.emailIds)
+        : null;
+      const ids = [...submissions.values()]
+        .filter(
+          (submission) =>
+            !requestedEmailIds || requestedEmailIds.has(submission.emailId),
+        )
+        .map((submission) => submission.id);
+      return [
+        method,
+        {
+          accountId: "fixture-account",
+          queryState: "submission-query-state",
+          canCalculateChanges: true,
+          position: 0,
+          ids,
+          total: ids.length,
         },
         callId,
       ];
@@ -311,6 +435,35 @@ try {
       { mode: 0o600 },
     );
     if (statefulReport.verdict !== "compatible") {
+      process.exitCode = 1;
+    }
+  }
+
+  const outboundOutput = process.env.OUTBOUND_CONTRACT_REPORT?.trim();
+  if (outboundOutput) {
+    const client = new JmapClient({
+      sessionUrl: `${origin}/.well-known/jmap`,
+      authMode: "bearer",
+      token: "fixture-token",
+    });
+    const outboundReport = await runOutboundContract({
+      client,
+      serverProfile: "generic",
+      forceDraftCleanup: async (emailIds) => {
+        const result = await client.callMethod("Email/set", {
+          accountId: client.state.mailAccountId,
+          destroy: emailIds,
+        });
+        const destroyed = Array.isArray(result.destroyed) ? result.destroyed : [];
+        return emailIds.every((emailId) => destroyed.includes(emailId));
+      },
+    });
+    await writeFile(
+      outboundOutput,
+      `${JSON.stringify(outboundReport, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+    if (outboundReport.verdict !== "compatible") {
       process.exitCode = 1;
     }
   }
