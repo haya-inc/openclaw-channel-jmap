@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { JmapAccountSchema } from "./config-schema.js";
 import type { CoreConfig } from "./types.js";
 import { resolveJmapAccount } from "./accounts.js";
 
@@ -71,5 +72,21 @@ describe("resolveJmapAccount", () => {
     expect(account.config.markAsRead).not.toBe(true);
     expect(account.config.processExistingUnread).not.toBe(true);
     expect(account.config.dispatchInbound).not.toBe(false);
+  });
+
+  it("defaults outbound delivery to reviewed and requires autonomous auto-reply", () => {
+    expect(JmapAccountSchema.parse({}).outboundPolicy).toBe("reviewed");
+    expect(() => JmapAccountSchema.parse({ autoReply: true })).toThrow(
+      /outboundPolicy=.*autonomous/,
+    );
+    expect(
+      JmapAccountSchema.parse({
+        autoReply: true,
+        outboundPolicy: "autonomous",
+      }),
+    ).toMatchObject({
+      autoReply: true,
+      outboundPolicy: "autonomous",
+    });
   });
 });

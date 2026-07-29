@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnyAgentTool } from "openclaw/plugin-sdk/core";
 import { setJmapRuntime } from "./runtime.js";
+import { JMAP_OUTBOUND_SAFETY_POLICY_ID } from "./outbound-policy.js";
 import {
   getJmapRuntimeStatus,
   resetJmapRuntimeStatusForTests,
@@ -94,6 +95,7 @@ describe("JMAP agent tools full chain", () => {
           enabled: true,
           apiToken: "test-token",
           sessionUrl: server.sessionUrl,
+          outboundPolicy: "autonomous",
         },
       },
     } as CoreConfig;
@@ -128,18 +130,30 @@ describe("JMAP agent tools full chain", () => {
   });
 
   it("keeps implementation, registration, and manifest tool contracts aligned", () => {
-    const implementationNames = createJmapTools().map((tool) => tool.name);
+    const safeImplementationNames = createJmapTools().map((tool) => tool.name);
+    const implementationNames = createJmapTools({
+      includeImmediateSend: true,
+    }).map((tool) => tool.name);
     const manifest = JSON.parse(
       readFileSync(new URL("../openclaw.plugin.json", import.meta.url), "utf8"),
-    ) as { contracts?: { tools?: string[] } };
+    ) as {
+      contracts?: {
+        tools?: string[];
+        trustedToolPolicies?: string[];
+      };
+    };
 
+    expect(safeImplementationNames).not.toContain("jmap_mail_send");
     expect(implementationNames).toHaveLength(21);
     expect(implementationNames).toEqual([...JMAP_TOOL_NAMES]);
     expect(manifest.contracts?.tools).toEqual(implementationNames);
+    expect(manifest.contracts?.trustedToolPolicies).toEqual([
+      JMAP_OUTBOUND_SAFETY_POLICY_ID,
+    ]);
   });
 
   it("executes the original nine model-visible tools and records anonymous usage telemetry", async () => {
-    const tools = createJmapTools();
+    const tools = createJmapTools({ includeImmediateSend: true });
 
     const mailboxes = await findTool(tools, "jmap_mail_mailboxes").execute(
       "call-mailboxes",
@@ -410,7 +424,7 @@ describe("JMAP agent tools full chain", () => {
   });
 
   it("runs preview, replacement, re-preview, explicit submit, history, cancel, and discard safely", async () => {
-    const tools = createJmapTools();
+    const tools = createJmapTools({ includeImmediateSend: true });
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "jmap_mail_search_snippets",

@@ -2,14 +2,18 @@ import { Type } from "@sinclair/typebox";
 import { jsonResult, type AnyAgentTool } from "openclaw/plugin-sdk/core";
 import { resolveJmapAccount } from "./accounts.js";
 import {
+  resolveConfiguredJmapAccount,
+  resolveJmapClient,
+} from "./client-resolver.js";
+import {
   classifyEmailAutomation,
   compact,
   extractLinksFromEmail,
   extractTextFromEmail,
 } from "./jmap-email.js";
 import { htmlToPlainText } from "./html.js";
-import { JmapClient } from "./jmap-client.js";
 import { getJmapRuntime } from "./runtime.js";
+import { consumeJmapDraftSubmitAuthorization } from "./outbound-policy.js";
 import { sendJmapMessageToAddress, sendJmapReplyToThread } from "./send.js";
 import {
   recordJmapToolFailed,
@@ -17,7 +21,6 @@ import {
   recordJmapToolSucceeded,
   recordJmapOutbound,
 } from "./status.js";
-import { getJmapClient, setJmapClient } from "./store.js";
 import type {
   CoreConfig,
   JmapDraftAttachmentInput,
@@ -78,29 +81,9 @@ function optionalStringArray(params: Record<string, unknown>, key: string): stri
 
 async function resolveClient(accountId?: string): Promise<{
   account: JmapResolvedAccount;
-  client: JmapClient;
+  client: Awaited<ReturnType<typeof resolveJmapClient>>["client"];
 }> {
-  const cfg = getJmapRuntime().config.current() as unknown as CoreConfig;
-  const account = resolveJmapAccount({ cfg, accountId });
-  if (!account.configured || !account.token) {
-    throw new Error(`JMAP account "${account.accountId}" is not configured`);
-  }
-  const cached = getJmapClient(account.accountId);
-  if (cached) {
-    if (!cached.isReady) {
-      await cached.init();
-    }
-    return { account, client: cached };
-  }
-  const client = new JmapClient({
-    sessionUrl: account.sessionUrl,
-    token: account.token,
-    authMode: account.authMode,
-    username: account.username,
-  });
-  await client.init();
-  setJmapClient(account.accountId, client);
-  return { account, client };
+  return resolveJmapClient({ accountId });
 }
 
 function addresses(
@@ -344,8 +327,10 @@ async function runAuditedJmapTool<T>(
   }
 }
 
-export function createJmapTools(): AnyAgentTool[] {
-  return [
+export function createJmapTools(options?: {
+  includeImmediateSend?: boolean;
+}): AnyAgentTool[] {
+  const tools: AnyAgentTool[] = [
     {
       name: "jmap_mail_mailboxes",
       label: "List JMAP mailboxes",
@@ -1126,7 +1111,7 @@ export function createJmapTools(): AnyAgentTool[] {
       name: "jmap_mail_draft_submit",
       label: "Submit previewed JMAP mail draft",
       description:
-        "Submit the exact draft content that was most recently previewed. This causes external delivery and requires explicit confirmation. A stale preview token is refused.",
+        "Submit the exact draft content that was most recently previewed. This causes external delivery. Reviewed mode also requires one-time OpenClaw operator approval. A stale preview token is refused.",
       parameters: Type.Object(
         {
           accountId: accountIdParam,
@@ -1141,18 +1126,31 @@ export function createJmapTools(): AnyAgentTool[] {
             }),
           ),
           confirm: Type.Literal(true, {
-            description: "Must be true to authorize external delivery.",
+            description:
+              "Must be true to acknowledge the external side effect. This is not operator authorization; reviewed mode separately requires native approval.",
           }),
         },
         { additionalProperties: false },
       ),
-      execute: async (_toolCallId, rawParams) => {
+      execute: async (toolCallId, rawParams) => {
         const params = rawParams as Record<string, unknown>;
         return runAuditedJmapTool("jmap_mail_draft_submit", params, async () => {
           if (params.confirm !== true) {
             throw new Error("confirm=true is required to submit a draft");
           }
-          const { account, client } = await resolveClient(optionalString(params.accountId));
+          const account = resolveConfiguredJmapAccount({
+            accountId: optionalString(params.accountId),
+          });
+          consumeJmapDraftSubmitAuthorization({
+            toolCallId,
+            account,
+            emailId: requiredString(params, "emailId"),
+            identityId: requiredString(params, "identityId"),
+            fromEmail: optionalString(params.fromEmail),
+            previewToken: requiredString(params, "previewToken"),
+            sendAt: optionalString(params.sendAt),
+          });
+          const { client } = await resolveJmapClient({ account });
           const result = await client.submitDraft({
             emailId: requiredString(params, "emailId"),
             identityId: requiredString(params, "identityId"),
@@ -1275,7 +1273,7 @@ export function createJmapTools(): AnyAgentTool[] {
       name: "jmap_mail_send",
       label: "Send JMAP mail",
       description:
-        "Send an email immediately, or reply immediately to an existing JMAP thread. This is an external side effect.",
+        "Autonomous-only compatibility path. Send an email immediately, or reply immediately to an existing JMAP thread. This is an external side effect and bypasses draft review.",
       parameters: Type.Object(
         {
           accountId: accountIdParam,
@@ -1293,7 +1291,12 @@ export function createJmapTools(): AnyAgentTool[] {
           const text = requiredString(params, "text");
           const threadId = optionalString(params.threadId);
           if (threadId) {
-            const result = await sendJmapReplyToThread({ accountId, threadId, text });
+            const result = await sendJmapReplyToThread({
+              accountId,
+              threadId,
+              text,
+              intent: "autonomous-agent",
+            });
             return jsonResult({ accountId: accountId ?? "default", ...result });
           }
           const toEmail = requiredString(params, "to");
@@ -1302,6 +1305,7 @@ export function createJmapTools(): AnyAgentTool[] {
             toEmail,
             text,
             subject: optionalString(params.subject),
+            intent: "autonomous-agent",
           });
           return jsonResult({ accountId: accountId ?? "default", to: toEmail, ...result });
         });
@@ -1384,6 +1388,9 @@ export function createJmapTools(): AnyAgentTool[] {
       },
     },
   ];
+  return options?.includeImmediateSend === true
+    ? tools
+    : tools.filter((tool) => tool.name !== "jmap_mail_send");
 }
 
 export const JMAP_TOOL_NAMES = [

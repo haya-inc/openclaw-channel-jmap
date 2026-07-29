@@ -15,6 +15,7 @@ function createConfig(server: JmapMockServer): CoreConfig {
         apiToken: "test-token",
         sessionUrl: server.sessionUrl,
         pollIntervalSec: 20,
+        outboundPolicy: "autonomous",
       },
     },
   } as CoreConfig;
@@ -112,6 +113,7 @@ describe("sendJmapByTarget chain", () => {
       cfg: config,
       to: "Alice@Example.com",
       text: "hello world",
+      intent: "autonomous-agent",
     });
 
     expect(result).toEqual({
@@ -179,6 +181,7 @@ describe("sendJmapByTarget chain", () => {
       cfg: config,
       to: "thread:Thread-1",
       text: "Thanks, received",
+      intent: "autonomous-agent",
     });
 
     expect(result).toEqual({
@@ -202,6 +205,24 @@ describe("sendJmapByTarget chain", () => {
       threadId: "thread-1",
     });
     expect(cachedContext?.latestMessageId).toBe("m2");
+  });
+
+  it("fails closed before JMAP access when direct delivery is not autonomous", async () => {
+    const config = createConfig(server);
+    if (config.channels?.jmap) {
+      config.channels.jmap.outboundPolicy = "reviewed";
+    }
+    configureRuntime(config, vi.fn());
+
+    await expect(
+      sendJmapByTarget({
+        cfg: config,
+        to: "alice@example.com",
+        text: "must not send",
+        intent: "autonomous-agent",
+      }),
+    ).rejects.toThrow(/reviewed draft workflow/);
+    expect(server.getRequests()).toHaveLength(0);
   });
 
   it("flags recoverable polling errors", () => {

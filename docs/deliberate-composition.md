@@ -15,16 +15,55 @@ outbound message:
 6. Preview the replacement. Never reuse a token from an earlier draft or
    revision.
 7. Finish with exactly one explicit action:
-   `jmap_mail_draft_submit` to authorize delivery, or
+   `jmap_mail_draft_submit` to request delivery, or
    `jmap_mail_draft_discard` to permanently remove the draft. Both require the
-   current preview token and `confirm: true`.
+   current preview token and `confirm: true`. Under the default `reviewed`
+   policy, submission then waits for a one-time OpenClaw operator approval.
 8. After submission, inspect `jmap_mail_submissions`. Cancellation is available
    only while the server reports `undoStatus: pending`; use
    `jmap_mail_submission_cancel` with `confirm: true`.
 
-The older `jmap_mail_send` tool remains available for compatibility and sends
-immediately. New workflows that need deliberate review should use the draft
-path above.
+The older `jmap_mail_send` tool is registered only when the selected
+configuration explicitly uses `outboundPolicy: "autonomous"`. It sends
+immediately and must not be used for reviewed workflows.
+
+## Outbound authorization
+
+Each resolved account has one fail-closed policy:
+
+- `disabled` blocks every delivery path.
+- `reviewed` is the default. Draft submission requires native OpenClaw
+  approval with only `allow-once` and `deny` decisions.
+- `autonomous` enables immediate channel delivery, automatic model replies, and
+  the compatibility send tool without per-message operator approval.
+
+In reviewed mode, the approval request re-reads the draft before it is shown.
+It includes the account, Identity, envelope recipients, subject, requested
+send time, attachment summary, bounded body preview, content-bound preview
+digest, and SHA-256 body digest. Long fields are visibly truncated; deny and
+inspect the full draft preview whenever the approval view is insufficient.
+An approval is bound to the host-generated tool-call id, account, draft,
+Identity, concrete From address, preview token, and requested send time. It is
+consumed before submission and cannot be replayed.
+
+The submission tool also verifies the one-time grant itself. If the trusted
+policy is not registered, the approval route is unavailable, the request
+expires, or tool execution occurs in another process, no submission is made.
+The plugin must therefore be explicitly enabled at
+`plugins.entries.jmap.enabled: true`.
+
+### Migration from 0.4
+
+The 0.4 stable tag exposed `jmap_mail_send` whenever the plugin was active and
+allowed `autoReply: true` without a separate outbound policy. For 0.5:
+
+- configurations that do not specify a policy become `reviewed`;
+- deployments that intentionally need immediate tool delivery or automatic
+  replies must add `outboundPolicy: "autonomous"` per applicable account;
+- `autoReply: true` without autonomous policy is rejected during configuration
+  validation rather than silently broadening delivery authority;
+- the plugin must be explicitly enabled so OpenClaw accepts its declared
+  trusted-tool policy.
 
 ## Preview token
 
@@ -35,10 +74,11 @@ submission, the client fetches the draft again and recomputes the token. A
 changed or unpreviewed draft is rejected as `stalePreview`.
 
 The token is not an authorization credential and does not freeze unrelated
-mailbox activity. JMAP state preconditions are also used for the actual draft
-mutation. If replacement creation succeeds but removal of the old draft fails,
-the replacement id is returned in a `draftReplaceIncomplete` error so no
-content is silently lost.
+mailbox activity. It proves content integrity; OpenClaw's one-time approval
+proves operator intent. JMAP state preconditions are also used for the actual
+draft mutation. If replacement creation succeeds but removal of the old draft
+fails, the replacement id is returned in a `draftReplaceIncomplete` error so
+no content is silently lost.
 
 ## Identities and signatures
 
@@ -97,7 +137,8 @@ The reviewed threats and controls are:
 |---|---|---|
 | Mail content changes after review | Re-fetch and content-bound preview token; JMAP state precondition on mutation | A compromised server can misrepresent its own state or delivery |
 | Wrong or forged From address | Exact Identity selection; wildcard addresses restricted to their advertised domain | Server-side aliases and policy remain authoritative |
-| Accidental send or discard | Separate tools, current preview token, and literal `confirm: true` | A sufficiently authorized agent can still make a mistaken confirmed choice |
+| Model-only or injected send | Immediate send absent by default; native `allow-once` approval; tool-call-bound grant; fail-closed execution check | An operator can still approve the wrong request, so the approval view includes bounded content and a digest |
+| Approval replay | Grant bound to account, draft, preview token, and host tool-call id; consumed before JMAP mutation | A process failure after consumption requires a new preview and approval |
 | Draft loss during revision | Create replacement first; destroy original second; surface replacement id on partial failure | A partial failure may leave two drafts and needs cleanup |
 | False delivery claim | Return submission and delivery status without treating creation as delivery | Remote SMTP/DSN information can be delayed or incomplete |
 | Invalid recall claim | Permit cancellation only from `pending`, then re-read `canceled` | Delivery may race with the cancellation request |

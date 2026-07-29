@@ -35,6 +35,8 @@ The stable release requires all items marked `required` in
 - safe draft creation, reading, revision, and discard behavior;
 - a bounded preview of exactly what will be submitted;
 - a distinct, explicit submission action;
+- one-time native operator approval in the default reviewed mode, with
+  immediate and automatic delivery restricted to explicit autonomous mode;
 - submission lookup and status reporting;
 - scheduling and undo only when the server advertises and correctly implements
   them, with an explicit unsupported result otherwise;

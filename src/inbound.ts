@@ -6,6 +6,7 @@ import { createReplyPrefixOptions } from "openclaw/plugin-sdk/channel-reply-pipe
 import { PAIRING_APPROVED_MESSAGE } from "openclaw/plugin-sdk/channel-status";
 import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-gating";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import { isJmapAutoReplyEnabled } from "./outbound-policy.js";
 import type { CoreConfig, JmapInboundMessage, JmapResolvedAccount } from "./types.js";
 import { getJmapRuntime } from "./runtime.js";
 import { sendJmapReplyToThread } from "./send.js";
@@ -122,6 +123,7 @@ export async function handleJmapInbound(params: {
               idLine: `Your email id: ${message.senderEmail}`,
               code,
             }),
+            intent: "system-pairing",
           });
           statusSink?.({ lastOutboundAt: Date.now() });
         } catch (err) {
@@ -232,9 +234,10 @@ export async function handleJmapInbound(params: {
     dispatcherOptions: {
       ...prefixOptions,
       deliver: async (payload) => {
-        if (account.config.autoReply !== true || message.automated) {
+        if (!isJmapAutoReplyEnabled(account) || message.automated) {
           runtime.info(
-            `reply suppressed thread=${message.threadId} sender=${message.senderEmail} (autoReply=${account.config.autoReply === true}, automated=${message.automated})`,
+            `reply suppressed thread=${message.threadId} sender=${message.senderEmail} ` +
+              `(autoReply=${isJmapAutoReplyEnabled(account)}, automated=${message.automated})`,
           );
           return;
         }
@@ -243,6 +246,7 @@ export async function handleJmapInbound(params: {
           threadId: message.threadId,
           text: payload.text ?? "",
           mediaUrls: payload.mediaUrls ?? (payload.mediaUrl ? [payload.mediaUrl] : undefined),
+          intent: "configured-auto-reply",
         });
         statusSink?.({ lastOutboundAt: Date.now() });
       },
@@ -279,5 +283,8 @@ export const jmapPairing = {
 
 async function sendJmapReplyToAddress(params: { toEmail: string; text: string; subject?: string }) {
   const { sendJmapMessageToAddress } = await import("./send.js");
-  await sendJmapMessageToAddress(params);
+  await sendJmapMessageToAddress({
+    ...params,
+    intent: "system-pairing",
+  });
 }

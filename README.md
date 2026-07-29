@@ -93,7 +93,7 @@ or exposes mailbox identifiers. See
   - `jmap_mail_draft_submit`
   - `jmap_mail_submissions`
   - `jmap_mail_submission_cancel`
-  - `jmap_mail_send`
+  - `jmap_mail_send` (only with `outboundPolicy: "autonomous"`)
   - `jmap_mail_update`
   - `jmap_mail_move`
 
@@ -102,6 +102,10 @@ or exposes mailbox identifiers. See
 Email is an untrusted public input surface. The defaults therefore:
 
 - do not send an automatic model reply (`autoReply: false`);
+- require one-time OpenClaw operator approval before a reviewed draft is
+  submitted (`outboundPolicy: "reviewed"`);
+- do not expose the immediate-send compatibility tool unless autonomous
+  delivery is explicitly enabled;
 - do not mark inbound messages read (`markAsRead: false`);
 - do not process the existing unread backlog at startup
   (`processExistingUnread: false`);
@@ -115,8 +119,8 @@ Email is an untrusted public input surface. The defaults therefore:
 - do not expose permanent deletion as an agent tool.
 - keep draft creation and submission as separate actions: creating or revising
   a draft never sends it;
-- require an exact content-bound preview token plus explicit confirmation for
-  deliberate submission or discard;
+- require an exact content-bound preview token plus host-bound, one-time
+  operator approval for deliberate submission;
 - cap model-driven blob upload at 5 MiB and never destroy originals after
   cross-account copy.
 
@@ -142,6 +146,15 @@ openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 Restart the OpenClaw gateway after changing the plugin or channel
 configuration.
 
+The reviewed-send policy is a trusted plugin contract. Explicitly enable the
+installed plugin so OpenClaw can register it:
+
+```bash
+openclaw config set plugins.entries.jmap.enabled true
+```
+
+Submission still fails closed if the native approval route is unavailable.
+
 ## Configure
 
 ### Stalwart or another Basic-auth JMAP server
@@ -164,6 +177,7 @@ Then configure the channel:
       "dmPolicy": "allowlist",
       "allowFrom": ["owner@example.com"],
       "dispatchInbound": false,
+      "outboundPolicy": "reviewed",
       "autoReply": false,
       "markAsRead": false,
       "processExistingUnread": false
@@ -191,6 +205,7 @@ export JMAP_API_TOKEN='your-token'
       "authMode": "bearer",
       "dmPolicy": "allowlist",
       "dispatchInbound": false,
+      "outboundPolicy": "reviewed",
       "allowFrom": ["owner@example.com"]
     }
   }
@@ -210,6 +225,7 @@ Top-level settings are inherited by named accounts:
       "sessionUrl": "https://mail.example.com/.well-known/jmap",
       "dmPolicy": "allowlist",
       "dispatchInbound": false,
+      "outboundPolicy": "reviewed",
       "autoReply": false,
       "accounts": {
         "support": {
@@ -237,16 +253,36 @@ Top-level settings are inherited by named accounts:
 | `sessionUrl` | Fastmail session URL | JMAP session discovery URL |
 | `authMode` | inferred | `basic` or `bearer` |
 | `pollIntervalSec` | `20` | Polling interval, 5–300 seconds |
+| `outboundPolicy` | `reviewed` | `disabled`, one-time operator-approved `reviewed`, or explicitly unattended `autonomous` delivery |
 | `dmPolicy` | `allowlist` | Sender access policy |
 | `allowFrom` | `[]` | Allowed sender addresses; `open` requires `["*"]` |
 | `dispatchInbound` | `true` | Start an agent turn for accepted new mail; set `false` for passive/search-only inboxes |
-| `autoReply` | `false` | Send the model response back to the email thread |
+| `autoReply` | `false` | Send the model response back to the email thread; requires `outboundPolicy: "autonomous"` |
 | `markAsRead` | `false` | Mark successfully handled inbound mail read |
 | `processExistingUnread` | `false` | Process unread mail already present at startup |
 | `maxBodyBytes` | `100000` | Maximum body bytes exposed per email |
 
 If `sessionUrl` is omitted, the compatibility default is Fastmail. Non-Fastmail
 deployments should always set it explicitly.
+
+### Outbound policy
+
+`outboundPolicy` is enforced per resolved account on every delivery path:
+
+- `disabled` permits mailbox reads and draft preparation but blocks all
+  delivery, including system pairing notices.
+- `reviewed` is the default. The agent may create, inspect, and revise drafts.
+  Submission re-reads the draft, verifies the preview token, shows the operator
+  the envelope, subject, attachments, body preview, and body digest, and accepts
+  only `allow-once` or `deny`. Missing, denied, expired, or replayed approvals
+  send nothing.
+- `autonomous` explicitly enables direct channel delivery, automatic model
+  replies, and the legacy `jmap_mail_send` tool. Use it only for accounts whose
+  unattended-send behavior is intentionally authorized.
+
+Pairing protocol messages are allowed in `reviewed` mode because they are
+host-generated rather than model-composed. Set `disabled` for a strictly
+receive-only account.
 
 ## JMAP operations used
 

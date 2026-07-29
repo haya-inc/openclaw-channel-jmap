@@ -39,8 +39,9 @@ the stable package version.
 
 - Read operations may be directly exposed when their output is bounded.
 - Reversible mutations require an explicit tool call and return affected ids.
-- Outbound operations must never be used as a compatibility probe and require
-  deliberate invocation.
+- Outbound operations must never be used as a compatibility probe. The default
+  reviewed mode requires a content-bound native operator approval; unattended
+  delivery requires explicit autonomous policy.
 - Destructive or account-wide mutations are not exposed until policy,
   confirmation, dry-run, and audit behavior are specified.
 - “Implemented” and “supported by a server” are independent claims. The

@@ -19,6 +19,10 @@ export const JmapAccountSchemaBase = z
     apiTokenFile: z.string().optional(),
     sessionUrl: z.string().url().optional(),
     pollIntervalSec: z.number().int().min(5).max(300).optional(),
+    outboundPolicy: z
+      .enum(["disabled", "reviewed", "autonomous"])
+      .optional()
+      .default("reviewed"),
     dispatchInbound: z.boolean().optional().default(true),
     autoReply: z.boolean().optional().default(false),
     markAsRead: z.boolean().optional().default(false),
@@ -39,7 +43,25 @@ export const JmapAccountSchemaBase = z
   })
   .strict();
 
+function requireAutonomousAutoReply(
+  value: {
+    autoReply?: boolean;
+    outboundPolicy?: "disabled" | "reviewed" | "autonomous";
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (value.autoReply === true && value.outboundPolicy !== "autonomous") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["autoReply"],
+      message:
+        'channels.jmap.autoReply=true requires outboundPolicy="autonomous"',
+    });
+  }
+}
+
 export const JmapAccountSchema = JmapAccountSchemaBase.superRefine((value, ctx) => {
+  requireAutonomousAutoReply(value, ctx);
   requireOpenAllowFrom({
     policy: value.dmPolicy,
     allowFrom: value.allowFrom,
@@ -52,6 +74,7 @@ export const JmapAccountSchema = JmapAccountSchemaBase.superRefine((value, ctx) 
 export const JmapConfigSchema = JmapAccountSchemaBase.extend({
   accounts: z.record(z.string(), JmapAccountSchema.optional()).optional(),
 }).superRefine((value, ctx) => {
+  requireAutonomousAutoReply(value, ctx);
   requireOpenAllowFrom({
     policy: value.dmPolicy,
     allowFrom: value.allowFrom,

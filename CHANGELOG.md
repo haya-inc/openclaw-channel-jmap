@@ -16,6 +16,11 @@
   attachments backed by existing blob ids.
 - Add a machine-checked release gate so 0.5.0 is not cut until its complete
   public contract is ready.
+- Add fail-closed outbound policies. Reviewed draft submission now requires a
+  content-bound, host-tool-call-bound OpenClaw `allow-once` approval; immediate
+  send and automatic replies require explicit autonomous mode.
+- Migration: existing `autoReply: true` or immediate-send deployments must set
+  `outboundPolicy: "autonomous"`; all unspecified accounts default to reviewed.
 
 ## 0.4.1
 

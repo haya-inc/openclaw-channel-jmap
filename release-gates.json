@@ -43,6 +43,12 @@
         "description": "Submit only an existing reviewed draft through a distinct explicit outbound action."
       },
       {
+        "id": "operator-bound-approval",
+        "required": true,
+        "complete": true,
+        "description": "Default reviewed submission requires a one-time native operator approval bound to the exact account, draft, identity, preview, send time, and host tool call; missing or replayed approval fails closed."
+      },
+      {
         "id": "submission-observability",
         "required": true,
         "complete": true,

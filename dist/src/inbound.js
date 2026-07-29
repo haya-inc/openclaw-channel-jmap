@@ -3,6 +3,7 @@ import { logInboundDrop } from "openclaw/plugin-sdk/channel-inbound";
 import { createReplyPrefixOptions } from "openclaw/plugin-sdk/channel-reply-pipeline";
 import { PAIRING_APPROVED_MESSAGE } from "openclaw/plugin-sdk/channel-status";
 import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-gating";
+import { isJmapAutoReplyEnabled } from "./outbound-policy.js";
 import { getJmapRuntime } from "./runtime.js";
 import { sendJmapReplyToThread } from "./send.js";
 import { recordJmapInbound } from "./status.js";
@@ -97,6 +98,7 @@ export async function handleJmapInbound(params) {
                             idLine: `Your email id: ${message.senderEmail}`,
                             code,
                         }),
+                        intent: "system-pairing",
                     });
                     statusSink?.({ lastOutboundAt: Date.now() });
                 }
@@ -199,8 +201,9 @@ export async function handleJmapInbound(params) {
         dispatcherOptions: {
             ...prefixOptions,
             deliver: async (payload) => {
-                if (account.config.autoReply !== true || message.automated) {
-                    runtime.info(`reply suppressed thread=${message.threadId} sender=${message.senderEmail} (autoReply=${account.config.autoReply === true}, automated=${message.automated})`);
+                if (!isJmapAutoReplyEnabled(account) || message.automated) {
+                    runtime.info(`reply suppressed thread=${message.threadId} sender=${message.senderEmail} ` +
+                        `(autoReply=${isJmapAutoReplyEnabled(account)}, automated=${message.automated})`);
                     return;
                 }
                 await sendJmapReplyToThread({
@@ -208,6 +211,7 @@ export async function handleJmapInbound(params) {
                     threadId: message.threadId,
                     text: payload.text ?? "",
                     mediaUrls: payload.mediaUrls ?? (payload.mediaUrl ? [payload.mediaUrl] : undefined),
+                    intent: "configured-auto-reply",
                 });
                 statusSink?.({ lastOutboundAt: Date.now() });
             },
@@ -241,6 +245,9 @@ export const jmapPairing = {
 };
 async function sendJmapReplyToAddress(params) {
     const { sendJmapMessageToAddress } = await import("./send.js");
-    await sendJmapMessageToAddress(params);
+    await sendJmapMessageToAddress({
+        ...params,
+        intent: "system-pairing",
+    });
 }
 //# sourceMappingURL=inbound.js.map

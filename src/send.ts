@@ -1,12 +1,17 @@
-import type { JmapClient } from "./jmap-client.js";
-import type { CoreConfig } from "./types.js";
-import { resolveJmapAccount } from "./accounts.js";
+import {
+  resolveConfiguredJmapAccount,
+  resolveJmapClient,
+} from "./client-resolver.js";
 import { JmapMethodError } from "./jmap-client.js";
-import { JmapClient as JmapClientImpl } from "./jmap-client.js";
 import { isJmapThreadTarget, normalizeJmapTarget, parseJmapThreadTarget } from "./normalize.js";
+import {
+  assertJmapDirectOutboundAllowed,
+  type JmapDirectOutboundIntent,
+} from "./outbound-policy.js";
 import { getJmapRuntime } from "./runtime.js";
 import { recordJmapOutbound } from "./status.js";
-import { getJmapClient, getThreadContext, setJmapClient, setThreadContext } from "./store.js";
+import { getThreadContext, setThreadContext } from "./store.js";
+import type { CoreConfig } from "./types.js";
 
 function logJmapOutbound(accountId: string, message: string) {
   const logger = getJmapRuntime().logging?.getChildLogger?.({
@@ -19,34 +24,17 @@ function logJmapOutbound(accountId: string, message: string) {
 async function resolveClient(params: {
   accountId?: string | null;
   cfg?: CoreConfig;
-  preferExisting?: boolean;
-}): Promise<{ accountId: string; client: JmapClient }> {
-  const normalizedAccountId = params.accountId?.trim() || "default";
-  const existing = getJmapClient(normalizedAccountId);
-  if (existing && (params.preferExisting ?? true)) {
-    if (!existing.isReady) {
-      await existing.init();
-    }
-    return { accountId: normalizedAccountId, client: existing };
-  }
-
-  const core = getJmapRuntime();
-  const cfg = params.cfg ?? (core.config.current() as unknown as CoreConfig);
-  const account = resolveJmapAccount({ cfg, accountId: params.accountId });
-  if (!account.configured || !account.token.trim()) {
-    throw new Error(
-      `JMAP is not configured for account "${account.accountId}" (set channels.jmap.apiToken/apiTokenFile or JMAP_API_TOKEN/JMAIL_API_TOKEN).`,
-    );
-  }
-
-  const client = new JmapClientImpl({
-    sessionUrl: account.sessionUrl,
-    token: account.token,
-    authMode: account.authMode,
-    username: account.username,
+  intent: JmapDirectOutboundIntent;
+}) {
+  const cfg =
+    params.cfg ??
+    (getJmapRuntime().config.current() as unknown as CoreConfig);
+  const account = resolveConfiguredJmapAccount({
+    accountId: params.accountId,
+    cfg,
   });
-  await client.init();
-  setJmapClient(account.accountId, client);
+  assertJmapDirectOutboundAllowed({ account, intent: params.intent });
+  const { client } = await resolveJmapClient({ account });
   return { accountId: account.accountId, client };
 }
 
@@ -55,6 +43,8 @@ export async function sendJmapReplyToThread(params: {
   threadId: string;
   text: string;
   mediaUrls?: string[];
+  cfg?: CoreConfig;
+  intent: JmapDirectOutboundIntent;
 }): Promise<{ messageId: string; threadId?: string }> {
   const threadId = params.threadId.trim().toLowerCase();
   if (!threadId) {
@@ -67,7 +57,11 @@ export async function sendJmapReplyToThread(params: {
     throw new Error("JMAP outbound message is empty");
   }
 
-  const { accountId, client } = await resolveClient({ accountId: params.accountId });
+  const { accountId, client } = await resolveClient({
+    accountId: params.accountId,
+    cfg: params.cfg,
+    intent: params.intent,
+  });
   const state = client.state;
   let context = getThreadContext({
     accountId: state.mailAccountId,
@@ -107,8 +101,14 @@ export async function sendJmapMessageToAddress(params: {
   toEmail: string;
   text: string;
   subject?: string;
+  cfg?: CoreConfig;
+  intent: JmapDirectOutboundIntent;
 }): Promise<{ messageId: string; threadId?: string }> {
-  const { accountId, client } = await resolveClient({ accountId: params.accountId });
+  const { accountId, client } = await resolveClient({
+    accountId: params.accountId,
+    cfg: params.cfg,
+    intent: params.intent,
+  });
   const result = await client.sendToAddress({
     toEmail: params.toEmail,
     text: params.text,
@@ -134,6 +134,7 @@ export async function sendJmapByTarget(params: {
   text: string;
   mediaUrl?: string;
   threadId?: string | number | null;
+  intent: JmapDirectOutboundIntent;
 }): Promise<{ messageId: string; threadId?: string; to: string }> {
   const normalized = normalizeJmapTarget(params.to);
   if (!normalized) {
@@ -153,6 +154,8 @@ export async function sendJmapByTarget(params: {
       threadId: threadHint,
       text: params.text,
       mediaUrls,
+      cfg: params.cfg,
+      intent: params.intent,
     });
     return {
       ...result,
@@ -170,6 +173,8 @@ export async function sendJmapByTarget(params: {
       threadId,
       text: params.text,
       mediaUrls,
+      cfg: params.cfg,
+      intent: params.intent,
     });
     return {
       ...result,
@@ -185,6 +190,8 @@ export async function sendJmapByTarget(params: {
     toEmail: normalized,
     text: withMedia,
     subject: "OpenClaw",
+    cfg: params.cfg,
+    intent: params.intent,
   });
   return {
     ...result,

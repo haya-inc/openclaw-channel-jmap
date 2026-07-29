@@ -18,6 +18,10 @@ import { JmapConfigSchema } from "./config-schema.js";
 import { jmapPairing } from "./inbound.js";
 import { monitorJmapProvider } from "./monitor.js";
 import { looksLikeEmailAddress, normalizeJmapTarget, parseJmapThreadTarget } from "./normalize.js";
+import {
+  isJmapAutoReplyEnabled,
+  resolveJmapOutboundPolicy,
+} from "./outbound-policy.js";
 import { sendJmapByTarget } from "./send.js";
 import { getJmapRuntimeStatus, type JmapRuntimeStatus } from "./status.js";
 
@@ -86,6 +90,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
       username: account.username || undefined,
       sessionUrl: account.sessionUrl,
       pollIntervalSec: account.pollIntervalSec,
+      outboundPolicy: resolveJmapOutboundPolicy(account),
     }),
     resolveAllowFrom: ({ cfg, accountId }) =>
       (resolveJmapAccount({ cfg: cfg as CoreConfig, accountId }).config.allowFrom ?? []).map(
@@ -260,6 +265,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
         to,
         text,
         threadId,
+        intent: "autonomous-agent",
       });
       return {
         channel: "jmap",
@@ -276,6 +282,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
         text,
         mediaUrl,
         threadId,
+        intent: "autonomous-agent",
       });
       return {
         channel: "jmap",
@@ -363,8 +370,9 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
         toolCallCount: Math.max(observed.toolCallCount, activity?.toolCallCount ?? 0),
         toolErrorCount: Math.max(observed.toolErrorCount, activity?.toolErrorCount ?? 0),
         dmPolicy: account.config.dmPolicy ?? "allowlist",
+        outboundPolicy: resolveJmapOutboundPolicy(account),
         dispatchInbound: account.config.dispatchInbound !== false,
-        autoReply: account.config.autoReply === true,
+        autoReply: isJmapAutoReplyEnabled(account),
         markAsRead: account.config.markAsRead === true,
       };
     },

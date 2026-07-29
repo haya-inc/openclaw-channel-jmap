@@ -14,3 +14,15 @@ Inbound email is untrusted input. Keep `autoReply`, `markAsRead`, and
 `processExistingUnread` disabled until the mailbox policy has been reviewed.
 For mailbox assistants that search mail on demand, also set
 `dispatchInbound: false` so arbitrary inbound mail cannot start a model turn.
+
+Outbound delivery defaults to `outboundPolicy: "reviewed"`. Reviewed draft
+submission re-verifies the content-bound preview and requires a native
+OpenClaw `allow-once` approval that the plugin consumes before JMAP submission.
+Missing, denied, expired, changed, or replayed approval sends nothing. Keep the
+plugin explicitly enabled so OpenClaw registers its declared trusted-tool
+policy.
+
+`outboundPolicy: "autonomous"` enables immediate model-driven delivery and is
+also required for automatic replies. Treat it as an explicit grant of
+unattended send authority, use a dedicated least-privilege mailbox, and do not
+enable it merely to bypass an unavailable approval route.

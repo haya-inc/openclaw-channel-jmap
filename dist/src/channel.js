@@ -6,6 +6,7 @@ import { JmapConfigSchema } from "./config-schema.js";
 import { jmapPairing } from "./inbound.js";
 import { monitorJmapProvider } from "./monitor.js";
 import { looksLikeEmailAddress, normalizeJmapTarget, parseJmapThreadTarget } from "./normalize.js";
+import { isJmapAutoReplyEnabled, resolveJmapOutboundPolicy, } from "./outbound-policy.js";
 import { sendJmapByTarget } from "./send.js";
 import { getJmapRuntimeStatus } from "./status.js";
 const meta = {
@@ -70,6 +71,7 @@ export const jmapPlugin = {
             username: account.username || undefined,
             sessionUrl: account.sessionUrl,
             pollIntervalSec: account.pollIntervalSec,
+            outboundPolicy: resolveJmapOutboundPolicy(account),
         }),
         resolveAllowFrom: ({ cfg, accountId }) => (resolveJmapAccount({ cfg: cfg, accountId }).config.allowFrom ?? []).map((entry) => String(entry)),
         formatAllowFrom: ({ allowFrom }) => allowFrom.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean),
@@ -235,6 +237,7 @@ export const jmapPlugin = {
                 to,
                 text,
                 threadId,
+                intent: "autonomous-agent",
             });
             return {
                 channel: "jmap",
@@ -251,6 +254,7 @@ export const jmapPlugin = {
                 text,
                 mediaUrl,
                 threadId,
+                intent: "autonomous-agent",
             });
             return {
                 channel: "jmap",
@@ -324,8 +328,9 @@ export const jmapPlugin = {
                 toolCallCount: Math.max(observed.toolCallCount, activity?.toolCallCount ?? 0),
                 toolErrorCount: Math.max(observed.toolErrorCount, activity?.toolErrorCount ?? 0),
                 dmPolicy: account.config.dmPolicy ?? "allowlist",
+                outboundPolicy: resolveJmapOutboundPolicy(account),
                 dispatchInbound: account.config.dispatchInbound !== false,
-                autoReply: account.config.autoReply === true,
+                autoReply: isJmapAutoReplyEnabled(account),
                 markAsRead: account.config.markAsRead === true,
             };
         },

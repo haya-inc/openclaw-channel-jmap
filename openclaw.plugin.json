@@ -26,6 +26,9 @@
     ]
   },
   "contracts": {
+    "trustedToolPolicies": [
+      "jmap-outbound-safety"
+    ],
     "tools": [
       "jmap_mail_mailboxes",
       "jmap_mail_identities",

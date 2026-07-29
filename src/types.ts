@@ -16,6 +16,7 @@ export const DEFAULT_POLL_INTERVAL_SEC = 20;
 export const DEFAULT_MAX_BODY_BYTES = 100_000;
 
 export type JmapAuthMode = "bearer" | "basic";
+export type JmapOutboundPolicy = "disabled" | "reviewed" | "autonomous";
 
 export type JmapAccountConfig = {
   name?: string;
@@ -28,6 +29,7 @@ export type JmapAccountConfig = {
   apiTokenFile?: string;
   sessionUrl?: string;
   pollIntervalSec?: number;
+  outboundPolicy?: JmapOutboundPolicy;
   dispatchInbound?: boolean;
   autoReply?: boolean;
   markAsRead?: boolean;
