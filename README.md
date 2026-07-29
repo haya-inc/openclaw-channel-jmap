@@ -345,6 +345,20 @@ the required Stalwart, Fastmail, Cyrus, Apache James, and generic profiles. It
 fails while a profile is missing and does not count advertised state-changing
 methods as verified. See [JMAP compatibility checks](docs/compatibility.md).
 
+Draft interoperability is checked separately on an explicitly designated
+disposable or dedicated test account:
+
+```bash
+export JMAP_STATEFUL_TEST_ALLOW_MUTATION=draft-only
+export JMAP_TEST_ACCOUNT_CLASS=dedicated-test
+npm run compatibility:draft-contract -- --server stalwart --json
+```
+
+This contract uses no recipients and never submits mail. It creates, previews,
+replaces, re-previews, stale-token checks, and discards only its own test
+drafts, then emits a redacted report. Isolated outbound evidence remains a
+separate release gate.
+
 ## Runtime status and evaluation
 
 `openclaw channels status --json` exposes per-account counters and timestamps

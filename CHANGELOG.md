@@ -5,6 +5,9 @@
 - Accept the RFC 8621 representation used by Stalwart where the same
   `text/plain` body part appears in both `textBody` and `htmlBody`, while
   continuing to reject drafts with an actual HTML alternative.
+- Add an explicitly authorized, recipient-free stateful draft contract probe
+  and split the 0.5 cross-server release gate into safe, draft, and outbound
+  evidence layers.
 - Add a machine-checked five-profile safe compatibility evidence policy,
   deterministic generic RFC fixture, and current full-scope evidence for
   Stalwart 0.16.12, Cyrus 3.13.6, and Apache James 3.9.0.

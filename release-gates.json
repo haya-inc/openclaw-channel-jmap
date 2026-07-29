@@ -67,10 +67,22 @@
         "description": "Expose bounded SearchSnippet/get results without broadening untrusted content access."
       },
       {
-        "id": "cross-server-evidence",
+        "id": "cross-server-safe-evidence",
         "required": true,
         "complete": false,
-        "description": "Pass contract checks for Stalwart, Fastmail, Cyrus, Apache James, and the generic JMAP profile."
+        "description": "Pass the content-free full-scope compatibility probe for Stalwart, Fastmail, Cyrus, Apache James, and the generic JMAP profile."
+      },
+      {
+        "id": "cross-server-draft-evidence",
+        "required": true,
+        "complete": false,
+        "description": "Pass the recipient-free draft lifecycle contract on dedicated or disposable Stalwart, Fastmail, Cyrus, Apache James, and generic JMAP targets."
+      },
+      {
+        "id": "cross-server-outbound-evidence",
+        "required": true,
+        "complete": false,
+        "description": "Verify explicit submission, truthful history, scheduling limits, and pending-only cancellation in isolated self-addressed delivery labs without treating acceptance as final delivery."
       },
       {
         "id": "documentation-and-security",

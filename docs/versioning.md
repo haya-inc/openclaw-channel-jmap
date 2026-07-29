@@ -40,14 +40,16 @@ The stable release requires all items marked `required` in
 - submission lookup and status reporting;
 - scheduling and undo only when the server advertises and correctly implements
   them, with an explicit unsupported result otherwise;
-- contract evidence for Stalwart, Fastmail, Cyrus, Apache James, and a generic
+- content-free, recipient-free draft, and isolated outbound contract evidence
+  for Stalwart, Fastmail, Cyrus, Apache James, and a generic
   standards-compliant profile;
 - completed public documentation and a security review of outbound boundaries.
 
 The composition implementation may exist on `main` while the package remains
-0.4.1. Passing mocked contract tests makes progress toward the public contract;
-it does not redefine the stable contract by itself. Cross-server evidence and
-the remaining release review are still required before 0.5.0.
+0.4.1. Passing mocked contract tests or one provider's live draft contract
+makes progress toward the public contract; it does not redefine the stable
+contract by itself. All three cross-server evidence layers and the remaining
+release review are still required before 0.5.0.
 
 ## Promotion
 

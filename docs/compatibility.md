@@ -170,6 +170,39 @@ does not complete the 0.5 composition contract: methods classified only as
 `advertised` still require a separately authorized, disposable state-changing
 contract suite.
 
+## Recipient-free draft contract
+
+The stateful draft contract is deliberately separate from the safe probe. It
+creates a recipient-free plain-text draft, reads an exact preview, replaces the
+immutable Email, previews the replacement, verifies rejection of the stale
+preview token, discards the replacement, and confirms it is gone. It never
+calls `EmailSubmission/set` and never attempts delivery.
+
+The command refuses to run unless the operator explicitly identifies a
+disposable or dedicated test account:
+
+```bash
+export JMAP_STATEFUL_TEST_ALLOW_MUTATION=draft-only
+export JMAP_TEST_ACCOUNT_CLASS=dedicated-test
+
+openclaw-jmap-draft-contract --server stalwart --json
+```
+
+The redacted output conforms to
+[`stateful-contract-report.schema.json`](../stateful-contract-report.schema.json).
+It contains check names, status, error type, and cleanup confirmation only—no
+account, mailbox, Identity, Email, subject, body, recipient, or credential
+values. If a failure leaves a created draft active, the runner makes a
+best-effort direct cleanup of only the Email ids it created and reports whether
+that cleanup was confirmed.
+
+This contract closes the gap that a content-free capability probe cannot see.
+For example, RFC 8621 permits the same `text/plain` part to appear in both
+`textBody` and `htmlBody`; the Stalwart live contract exposed an overly strict
+client check for that standard representation. Outbound submission, delivery,
+scheduling, and cancellation remain a third, separately authorized evidence
+layer.
+
 ## Live compatibility workflow
 
 The repository workflow `JMAP compatibility (live)` uses a GitHub Environment

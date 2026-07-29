@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haya-inc/openclaw-channel-jmap/blob/main/stateful-contract-report.schema.json",
+  "title": "openclaw-channel-jmap stateful draft contract report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "serverProfile",
+    "contract",
+    "verdict",
+    "checks",
+    "probePolicy"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "serverProfile": {
+      "enum": ["stalwart", "fastmail", "cyrus", "apache-james", "generic"]
+    },
+    "contract": { "const": "draft-lifecycle-v1" },
+    "verdict": { "enum": ["compatible", "incompatible"] },
+    "checks": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status"],
+        "properties": {
+          "id": {
+            "enum": [
+              "session",
+              "identity-list",
+              "draft-create",
+              "draft-preview",
+              "draft-replace",
+              "replacement-preview",
+              "stale-preview-rejection",
+              "draft-discard",
+              "discard-confirmation"
+            ]
+          },
+          "status": { "enum": ["pass", "fail", "not-run"] },
+          "errorType": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "probePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sideEffectsPerformed",
+        "permittedSideEffects",
+        "recipientsUsed",
+        "submissionAttempted",
+        "externalDeliveryAttempted",
+        "onlyTestDraftBodiesRead",
+        "cleanupConfirmed"
+      ],
+      "properties": {
+        "sideEffectsPerformed": { "const": true },
+        "permittedSideEffects": {
+          "const": ["draft-create", "draft-replace", "draft-destroy"]
+        },
+        "recipientsUsed": { "const": false },
+        "submissionAttempted": { "const": false },
+        "externalDeliveryAttempted": { "const": false },
+        "onlyTestDraftBodiesRead": { "const": true },
+        "cleanupConfirmed": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -29,7 +29,8 @@
     ".": "./dist/index.js"
   },
   "bin": {
-    "openclaw-jmap-compat": "./dist/src/compatibility-bin.js"
+    "openclaw-jmap-compat": "./dist/src/compatibility-bin.js",
+    "openclaw-jmap-draft-contract": "./dist/src/stateful-contract-bin.js"
   },
   "files": [
     "dist",
@@ -41,6 +42,7 @@
     "rfc8621-coverage.json",
     "compatibility-evidence.schema.json",
     "compatibility-report.schema.json",
+    "stateful-contract-report.schema.json",
     "docs",
     "openclaw.plugin.json"
   ],
@@ -50,6 +52,7 @@
     "compatibility:evidence": "node scripts/compatibility/verify-evidence.mjs",
     "compatibility:evidence:check": "node scripts/compatibility/verify-evidence.mjs --allow-incomplete",
     "compatibility:generic-fixture": "node scripts/compatibility/run-generic-fixture.mjs",
+    "compatibility:draft-contract": "node dist/src/stateful-contract-bin.js",
     "prepare": "npm run build",
     "prepack": "npm run build",
     "test": "vitest run",

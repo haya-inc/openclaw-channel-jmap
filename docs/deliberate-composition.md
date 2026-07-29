@@ -125,9 +125,11 @@ record.
 The implementation follows RFC 8620 and RFC 8621 rather than provider-specific
 APIs. Mock contract tests cover the standard request and response shapes.
 Actual support and edge behavior still need compatibility evidence from each
-target server. Until the 0.5 cross-server gate is complete, these additions
-remain unreleased development work on `main`, and the package version remains
-0.4.1.
+target server. The release gate separates content-free capability checks,
+recipient-free draft mutation, and isolated outbound behavior so one class of
+evidence cannot stand in for another. Until all 0.5 cross-server gates are
+complete, these additions remain unreleased development work on `main`, and
+the package version remains 0.4.1.
 
 ## Outbound-boundary security review
 
