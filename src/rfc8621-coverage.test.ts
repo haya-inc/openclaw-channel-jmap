@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   RFC8621_COVERAGE,
+  RFC8621_DEVELOPMENT_TARGET,
   RFC8621_PLUGIN_RELEASE,
 } from "./rfc8621-coverage.js";
 
@@ -38,6 +39,7 @@ type Coverage = {
   schemaVersion: number;
   standard: string;
   updatedForRelease: string;
+  developmentTarget: string;
   methods: Array<{
     method: string;
     status: string;
@@ -58,8 +60,10 @@ describe("RFC 8621 coverage ledger", () => {
       schemaVersion: 1,
       standard: "RFC 8621",
       updatedForRelease: "0.4.1",
+      developmentTarget: "0.5.0",
     });
     expect(coverage.updatedForRelease).toBe(RFC8621_PLUGIN_RELEASE);
+    expect(coverage.developmentTarget).toBe(RFC8621_DEVELOPMENT_TARGET);
     expect(coverage.methods).toEqual(RFC8621_COVERAGE);
     expect(names).toHaveLength(26);
     expect(new Set(names).size).toBe(26);

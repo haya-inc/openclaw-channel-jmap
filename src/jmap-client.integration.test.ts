@@ -10,9 +10,12 @@ type Bootstrapped = {
   submissionAccountId: string;
 };
 
-function readCreateEmail(call: JmapCapturedCall): Record<string, unknown> {
+function readCreateEmail(
+  call: JmapCapturedCall,
+  creationId = "createEmail",
+): Record<string, unknown> {
   const create = call.args.create as Record<string, unknown>;
-  return (create?.createEmail as Record<string, unknown>) ?? {};
+  return (create?.[creationId] as Record<string, unknown>) ?? {};
 }
 
 async function bootstrapClient(server: JmapMockServer): Promise<Bootstrapped> {
@@ -187,7 +190,7 @@ describe("JmapClient full chain", () => {
     expect(client.state.submissionAccountCapabilities).toContain(JMAP_SUBMISSION);
   });
 
-  it("keeps Mail-only accounts readable and fails sending before creating a draft", async () => {
+  it("keeps Mail-only accounts readable and refuses submission-dependent actions", async () => {
     server.setSession({
       capabilities: {
         "urn:ietf:params:jmap:core": {},
@@ -216,6 +219,15 @@ describe("JmapClient full chain", () => {
 
     expect(client.state.submissionAccountId).toBeUndefined();
     expect(server.getCalls("Identity/get")).toHaveLength(0);
+    await expect(client.listIdentities()).resolves.toEqual([]);
+    await expect(
+      client.createDraft({
+        subject: "Cannot select a sending identity",
+      }),
+    ).rejects.toMatchObject({
+      name: "Error",
+      type: "accountNotFound",
+    });
     await expect(
       client.sendToAddress({
         toEmail: "owner@example.com",
@@ -665,6 +677,136 @@ describe("JmapClient full chain", () => {
       cc: [{ email: "cc@example.com", name: "CC" }],
     });
     expect(context?.references).toEqual(["m-root", "m-first", "m-latest"]);
+  });
+
+  it("lists identities and saves a draft without submitting or changing the default identity", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    const identities = [
+      {
+        id: "identity-1",
+        email: "bot@example.com",
+        name: "OpenClaw Bot",
+        replyTo: [{ email: "reply@example.com", name: "Replies" }],
+        bcc: [{ email: "archive@example.com", name: "Archive" }],
+      },
+      {
+        id: "identity-2",
+        email: "alias@example.com",
+        name: "OpenClaw Alias",
+        replyTo: [{ email: "alias-replies@example.com" }],
+        bcc: [{ email: "alias-archive@example.com" }],
+      },
+    ];
+    server.enqueueMethod("Identity/get", { list: identities });
+
+    await expect(client.listIdentities()).resolves.toEqual(identities);
+
+    server.enqueueMethod("Identity/get", { list: identities });
+    server.enqueueMethod("Email/set", {
+      created: {
+        createDraft: {
+          id: "draft-1",
+          threadId: "thread-draft-1",
+          size: 321,
+        },
+      },
+    });
+
+    const result = await client.createDraft({
+      identityId: "identity-2",
+      to: ["ALICE@example.com", "alice@example.com"],
+      cc: ["reviewer@example.com"],
+      bcc: ["audit@example.com", "AUDIT@example.com"],
+      subject: "  Draft subject  ",
+      text: "Draft body",
+    });
+
+    expect(result).toEqual({
+      emailId: "draft-1",
+      threadId: "thread-draft-1",
+      size: 321,
+      identityId: "identity-2",
+      identityEmail: "alias@example.com",
+      draftsMailboxId: "mbox-drafts",
+    });
+    expect(client.state.identityId).toBe("identity-1");
+
+    const emailSetCall = server.getCalls("Email/set")[0];
+    expect(emailSetCall?.args).toMatchObject({
+      accountId: mailAccountId,
+    });
+    const draft = emailSetCall ? readCreateEmail(emailSetCall, "createDraft") : {};
+    expect(draft).toMatchObject({
+      mailboxIds: { "mbox-drafts": true },
+      from: [{ email: "alias@example.com", name: "OpenClaw Alias" }],
+      to: [{ email: "alice@example.com" }],
+      cc: [{ email: "reviewer@example.com" }],
+      bcc: [
+        { email: "alias-archive@example.com" },
+        { email: "audit@example.com" },
+      ],
+      replyTo: [{ email: "alias-replies@example.com" }],
+      subject: "Draft subject",
+      keywords: { $draft: true },
+      "header:Auto-Submitted:asText": "auto-generated",
+      "header:X-Auto-Response-Suppress:asText": "All",
+    });
+    const bodyValues = draft.bodyValues as Record<string, { value?: string }>;
+    expect(bodyValues?.["body-1"]?.value).toBe("Draft body");
+    expect(server.getCalls("EmailSubmission/set")).toHaveLength(0);
+    expect(server.pendingResponses).toBe(0);
+  });
+
+  it("rejects empty and malformed drafts before making a mutation", async () => {
+    const { client } = await bootstrapClient(server);
+
+    await expect(client.createDraft({})).rejects.toMatchObject({
+      type: "invalidArguments",
+      message: "Refusing to create an entirely empty draft",
+    });
+    await expect(
+      client.createDraft({
+        to: ["not-an-email"],
+        subject: "Invalid recipient",
+      }),
+    ).rejects.toMatchObject({
+      type: "invalidArguments",
+      message: "to contains an invalid email address",
+    });
+    await expect(
+      client.createDraft({
+        to: ["recipient@example.com"],
+        text: "x".repeat(1_000_001),
+      }),
+    ).rejects.toMatchObject({
+      type: "invalidArguments",
+      message: "Draft body exceeds the 1000000-byte limit",
+    });
+    expect(server.getCalls("Email/set")).toHaveLength(0);
+    expect(server.getCalls("EmailSubmission/set")).toHaveLength(0);
+  });
+
+  it("surfaces a rejected draft as a typed JMAP error without submitting it", async () => {
+    const { client } = await bootstrapClient(server);
+    server.enqueueMethod("Email/set", {
+      notCreated: {
+        createDraft: {
+          type: "invalidProperties",
+          description: "From address is not allowed",
+        },
+      },
+    });
+
+    await expect(
+      client.createDraft({
+        to: ["recipient@example.com"],
+        subject: "Rejected",
+      }),
+    ).rejects.toMatchObject({
+      type: "invalidProperties",
+      message: "From address is not allowed",
+    });
+    expect(server.getCalls("EmailSubmission/set")).toHaveLength(0);
   });
 
   it("sends to direct address through Email/set + EmailSubmission/set", async () => {

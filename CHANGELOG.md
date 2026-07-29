@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Begin the deliberate-composition milestone without changing the stable
+  package version.
+- Expose sending identities and allow an agent to save a plain-text draft with
+  an explicitly selected identity without submitting or sending it.
+- Add a machine-checked release gate so 0.5.0 is not cut until its complete
+  public contract is ready.
+
 ## 0.4.1
 
 - Use OpenClaw's current runtime configuration snapshot instead of the

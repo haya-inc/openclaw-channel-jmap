@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "currentStable": "0.4.1",
+  "next": {
+    "version": "0.5.0",
+    "status": "development",
+    "theme": "Deliberate composition",
+    "criteria": [
+      {
+        "id": "basic-identity-discovery",
+        "required": true,
+        "complete": true,
+        "description": "List available identities and identify the plugin-selected identity."
+      },
+      {
+        "id": "identity-composition",
+        "required": true,
+        "complete": false,
+        "description": "Select an identity per composition without changing the default, including wildcard domains, reply-to, Bcc, and signature behavior."
+      },
+      {
+        "id": "draft-create-safety",
+        "required": true,
+        "complete": true,
+        "description": "Create a bounded plain-text draft without invoking EmailSubmission/set."
+      },
+      {
+        "id": "draft-lifecycle",
+        "required": true,
+        "complete": false,
+        "description": "Read, revise, and explicitly discard drafts with optimistic concurrency and auditable results."
+      },
+      {
+        "id": "composition-preview",
+        "required": true,
+        "complete": false,
+        "description": "Preview the exact identity, recipients, headers, body, and attachments before submission."
+      },
+      {
+        "id": "explicit-submission",
+        "required": true,
+        "complete": false,
+        "description": "Submit only an existing reviewed draft through a distinct explicit outbound action."
+      },
+      {
+        "id": "submission-observability",
+        "required": true,
+        "complete": false,
+        "description": "Query submission state and report delivery status and errors truthfully."
+      },
+      {
+        "id": "scheduled-send-and-undo",
+        "required": true,
+        "complete": false,
+        "description": "Schedule or undo only when advertised and verified; otherwise return an explicit unsupported result."
+      },
+      {
+        "id": "search-snippets",
+        "required": true,
+        "complete": false,
+        "description": "Expose bounded SearchSnippet/get results without broadening untrusted content access."
+      },
+      {
+        "id": "cross-server-evidence",
+        "required": true,
+        "complete": false,
+        "description": "Pass contract checks for Stalwart, Fastmail, Cyrus, Apache James, and the generic JMAP profile."
+      },
+      {
+        "id": "documentation-and-security",
+        "required": true,
+        "complete": false,
+        "description": "Publish operator guidance, compatibility limits, migration notes, and an outbound-boundary security review."
+      }
+    ]
+  }
+}

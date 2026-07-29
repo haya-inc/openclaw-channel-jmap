@@ -16,6 +16,7 @@ export type Rfc8621CoverageEntry = {
 };
 
 export const RFC8621_PLUGIN_RELEASE = "0.4.1";
+export const RFC8621_DEVELOPMENT_TARGET = "0.5.0";
 
 export const RFC8621_COVERAGE: readonly Rfc8621CoverageEntry[] = [
   { method: "Mailbox/get", status: "implemented", exposure: "tool", risk: "read", targetRelease: "0.4.0" },
@@ -34,7 +35,7 @@ export const RFC8621_COVERAGE: readonly Rfc8621CoverageEntry[] = [
   { method: "Email/import", status: "planned", exposure: "none", risk: "reversible", targetRelease: "0.7.0" },
   { method: "Email/parse", status: "planned", exposure: "none", risk: "read", targetRelease: "0.7.0" },
   { method: "SearchSnippet/get", status: "planned", exposure: "none", risk: "read", targetRelease: "0.5.0" },
-  { method: "Identity/get", status: "implemented", exposure: "internal", risk: "read", targetRelease: "0.1.0" },
+  { method: "Identity/get", status: "implemented", exposure: "tool", risk: "read", targetRelease: "0.1.0" },
   { method: "Identity/changes", status: "planned", exposure: "none", risk: "read", targetRelease: "0.6.0" },
   { method: "Identity/set", status: "planned", exposure: "none", risk: "destructive", targetRelease: "0.8.0" },
   { method: "EmailSubmission/get", status: "planned", exposure: "none", risk: "read", targetRelease: "0.5.0" },

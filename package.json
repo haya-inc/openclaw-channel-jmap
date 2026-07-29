@@ -36,6 +36,7 @@
     "LICENSE",
     "NOTICE",
     "README.md",
+    "release-gates.json",
     "rfc8621-coverage.json",
     "compatibility-evidence.schema.json",
     "compatibility-report.schema.json",

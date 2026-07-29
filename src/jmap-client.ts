@@ -1,4 +1,5 @@
 import type {
+  JmapDraftCreateResult,
   JmapEmail,
   JmapEmailAddress,
   JmapIdentity,
@@ -21,7 +22,7 @@ import {
   parseTimestampMs,
   pickIdentity,
 } from "./jmap-email.js";
-import { normalizeEmailAddress } from "./normalize.js";
+import { looksLikeEmailAddress, normalizeEmailAddress } from "./normalize.js";
 import {
   DEFAULT_MAX_BODY_BYTES,
   JMAP_CORE,
@@ -112,6 +113,49 @@ function subjectFallbackToken(subject: string): string | undefined {
     ?.slice(0, 64);
 }
 
+function normalizeRecipientEmails(values: string[] | undefined, field: string): JmapEmailAddress[] {
+  const recipients: JmapEmailAddress[] = [];
+  const seen = new Set<string>();
+  for (const rawValue of values ?? []) {
+    const email = normalizeEmailAddress(rawValue);
+    if (!email || !looksLikeEmailAddress(email)) {
+      throw new JmapMethodError("invalidArguments", `${field} contains an invalid email address`);
+    }
+    if (!seen.has(email)) {
+      seen.add(email);
+      recipients.push({ email });
+    }
+  }
+  return recipients;
+}
+
+function mergeAddresses(...lists: Array<JmapEmailAddress[] | undefined>): JmapEmailAddress[] {
+  const addresses: JmapEmailAddress[] = [];
+  const seen = new Set<string>();
+  for (const list of lists) {
+    for (const address of list ?? []) {
+      const email = normalizeEmailAddress(address.email);
+      if (!email || !looksLikeEmailAddress(email) || seen.has(email)) {
+        continue;
+      }
+      seen.add(email);
+      addresses.push({
+        email,
+        ...(address.name?.trim() ? { name: address.name.trim() } : {}),
+      });
+    }
+  }
+  return addresses;
+}
+
+const MAX_DRAFT_RECIPIENTS = 100;
+const MAX_DRAFT_SUBJECT_BYTES = 998;
+const MAX_DRAFT_TEXT_BYTES = 1_000_000;
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
 export type JmapClientInit = {
   apiUrl: string;
   downloadUrl?: string;
@@ -130,6 +174,8 @@ export type JmapClientInit = {
   identityId?: string;
   identityEmail?: string;
   identityName?: string;
+  identityReplyTo?: JmapEmailAddress[];
+  identityBcc?: JmapEmailAddress[];
   selfEmails: Set<string>;
 };
 
@@ -243,6 +289,8 @@ export class JmapClient {
       identityId: identity?.id,
       identityEmail,
       identityName: identity?.name?.trim() || undefined,
+      identityReplyTo: identity?.replyTo,
+      identityBcc: identity?.bcc,
       selfEmails: normalizeIdentityEmails(identity, session.username),
     };
     return this.initState;
@@ -920,6 +968,139 @@ export class JmapClient {
     });
   }
 
+  async listIdentities(): Promise<JmapIdentity[]> {
+    const state = this.state;
+    if (!state.submissionAccountId) {
+      return [];
+    }
+    return await this.getIdentities(state.apiUrl, state.submissionAccountId);
+  }
+
+  async createDraft(params: {
+    identityId?: string;
+    to?: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject?: string;
+    text?: string;
+  }): Promise<JmapDraftCreateResult> {
+    const state = await this.ensureSubmissionIdentity(params.identityId);
+    const draftsMailbox = state.mailboxes.find(
+      (mailbox) => mailbox.id === state.draftsMailboxId,
+    );
+    if (!draftsMailbox) {
+      throw new JmapMethodError(
+        "notFound",
+        "JMAP account does not expose a mailbox with the drafts role",
+      );
+    }
+    if (draftsMailbox.myRights?.mayAddItems === false) {
+      throw new JmapMethodError(
+        "forbidden",
+        "JMAP account does not permit adding emails to the drafts mailbox",
+      );
+    }
+
+    const to = normalizeRecipientEmails(params.to, "to");
+    const cc = normalizeRecipientEmails(params.cc, "cc");
+    const explicitBcc = normalizeRecipientEmails(params.bcc, "bcc");
+    const bcc = mergeAddresses(state.identityBcc, explicitBcc);
+    const replyTo = mergeAddresses(state.identityReplyTo);
+    const subject = params.subject?.trim() ?? "";
+    const text = params.text ?? "";
+    if (to.length + cc.length + explicitBcc.length > MAX_DRAFT_RECIPIENTS) {
+      throw new JmapMethodError(
+        "invalidArguments",
+        `Draft recipients exceed the ${MAX_DRAFT_RECIPIENTS}-address limit`,
+      );
+    }
+    if (utf8ByteLength(subject) > MAX_DRAFT_SUBJECT_BYTES) {
+      throw new JmapMethodError(
+        "invalidArguments",
+        `Draft subject exceeds the ${MAX_DRAFT_SUBJECT_BYTES}-byte limit`,
+      );
+    }
+    if (utf8ByteLength(text) > MAX_DRAFT_TEXT_BYTES) {
+      throw new JmapMethodError(
+        "invalidArguments",
+        `Draft body exceeds the ${MAX_DRAFT_TEXT_BYTES}-byte limit`,
+      );
+    }
+    if (
+      to.length === 0 &&
+      cc.length === 0 &&
+      explicitBcc.length === 0 &&
+      !subject &&
+      !text.trim()
+    ) {
+      throw new JmapMethodError(
+        "invalidArguments",
+        "Refusing to create an entirely empty draft",
+      );
+    }
+
+    const bodyPartId = "body-1";
+    const createEmail = compact({
+      mailboxIds: {
+        [draftsMailbox.id]: true,
+      },
+      from: [
+        compact({
+          email: state.identityEmail,
+          name: state.identityName,
+        }),
+      ],
+      to: to.length > 0 ? to : undefined,
+      cc: cc.length > 0 ? cc : undefined,
+      bcc: bcc.length > 0 ? bcc : undefined,
+      replyTo: replyTo.length > 0 ? replyTo : undefined,
+      subject,
+      textBody: [{ partId: bodyPartId, type: "text/plain" }],
+      bodyValues: {
+        [bodyPartId]: {
+          value: text,
+        },
+      },
+      keywords: {
+        $draft: true,
+      },
+      "header:Auto-Submitted:asText": "auto-generated",
+      "header:X-Auto-Response-Suppress:asText": "All",
+    });
+    const emailSet = await this.callMethod("Email/set", {
+      accountId: state.mailAccountId,
+      create: {
+        createDraft: createEmail,
+      },
+    });
+    const created = emailSet.created as
+      | Record<string, { id?: string; threadId?: string; size?: number }>
+      | undefined;
+    const createdDraft = created?.createDraft;
+    const notCreated = emailSet.notCreated as
+      | Record<string, { type?: string; description?: string }>
+      | undefined;
+    const failure = notCreated?.createDraft;
+    if (failure) {
+      throw new JmapMethodError(
+        failure.type?.trim() || "notCreated",
+        failure.description?.trim() || "JMAP server rejected the draft",
+      );
+    }
+    const emailId = createdDraft?.id?.trim();
+    if (!emailId) {
+      throw new Error("JMAP Email/set did not return created draft id");
+    }
+    return {
+      emailId,
+      threadId: createdDraft?.threadId,
+      size: createdDraft?.size,
+      identityId: state.identityId,
+      identityEmail: state.identityEmail,
+      draftsMailboxId: draftsMailbox.id,
+    };
+  }
+
   private async sendEmailInternal(params: {
     to: JmapEmailAddress[];
     cc: JmapEmailAddress[];
@@ -1197,7 +1378,7 @@ export class JmapClient {
     return json;
   }
 
-  private async ensureSubmissionIdentity(): Promise<JmapSubmissionReadyState> {
+  private async ensureSubmissionIdentity(identityId?: string): Promise<JmapSubmissionReadyState> {
     const state = this.state;
     if (!state.submissionAccountId) {
       throw new JmapMethodError(
@@ -1205,19 +1386,26 @@ export class JmapClient {
         "JMAP Submission capability is not available for this account",
       );
     }
-    if (state.identityId && state.identityEmail) {
+    const requestedIdentityId = identityId?.trim();
+    if (
+      state.identityId &&
+      state.identityEmail &&
+      (!requestedIdentityId || state.identityId === requestedIdentityId)
+    ) {
       return state as JmapSubmissionReadyState;
     }
 
-    const identity = pickIdentity(
-      await this.getIdentities(state.apiUrl, state.submissionAccountId),
-      state.username,
-    );
+    const identities = await this.getIdentities(state.apiUrl, state.submissionAccountId);
+    const identity = requestedIdentityId
+      ? identities.find((candidate) => candidate.id === requestedIdentityId) ?? null
+      : pickIdentity(identities, state.username);
     const identityEmail = normalizeEmailAddress(identity?.email);
     if (!identity?.id || !identityEmail) {
       throw new JmapMethodError(
         "accountNotFound",
-        "JMAP identity not found for sending emails",
+        requestedIdentityId
+          ? `JMAP identity not found: ${requestedIdentityId}`
+          : "JMAP identity not found for sending emails",
       );
     }
 
@@ -1226,9 +1414,13 @@ export class JmapClient {
       identityId: identity.id,
       identityEmail,
       identityName: identity.name?.trim() || undefined,
+      identityReplyTo: identity.replyTo,
+      identityBcc: identity.bcc,
       selfEmails: normalizeIdentityEmails(identity, state.username),
     };
-    this.initState = next;
+    if (!requestedIdentityId) {
+      this.initState = next;
+    }
     return next as JmapSubmissionReadyState;
   }
 

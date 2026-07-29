@@ -54,6 +54,23 @@ function readEmailIds(params: Record<string, unknown>): string[] {
   return ids;
 }
 
+function optionalStringArray(params: Record<string, unknown>, key: string): string[] | undefined {
+  const raw = params[key];
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(raw)) {
+    throw new Error(`${key} must be an array`);
+  }
+  return raw.map((value) => {
+    const item = optionalString(value);
+    if (!item) {
+      throw new Error(`${key} must not contain empty values`);
+    }
+    return item;
+  });
+}
+
 async function resolveClient(accountId?: string): Promise<{
   account: JmapResolvedAccount;
   client: JmapClient;
@@ -218,6 +235,37 @@ export function createJmapTools(): AnyAgentTool[] {
           return jsonResult({
             accountId: account.accountId,
             mailboxes: client.listMailboxes(),
+          });
+        });
+      },
+    },
+    {
+      name: "jmap_mail_identities",
+      label: "List JMAP sending identities",
+      description:
+        "List the identities this JMAP account may use in a From field. This has no side effect and does not send mail.",
+      parameters: Type.Object(
+        {
+          accountId: accountIdParam,
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (_toolCallId, rawParams) => {
+        const params = rawParams as Record<string, unknown>;
+        return runAuditedJmapTool("jmap_mail_identities", params, async () => {
+          const { account, client } = await resolveClient(optionalString(params.accountId));
+          const identities = await client.listIdentities();
+          return jsonResult({
+            accountId: account.accountId,
+            submissionAvailable: Boolean(client.state.submissionAccountId),
+            identities: identities.map((identity) => ({
+              id: identity.id,
+              email: identity.email,
+              name: identity.name ?? "",
+              replyTo: addresses(identity.replyTo),
+              bcc: addresses(identity.bcc),
+              selected: identity.id === client.state.identityId,
+            })),
           });
         });
       },
@@ -412,6 +460,76 @@ export function createJmapTools(): AnyAgentTool[] {
       },
     },
     {
+      name: "jmap_mail_draft_create",
+      label: "Create JMAP mail draft",
+      description:
+        "Save a plain-text email draft in the Drafts mailbox without submitting or sending it. At least one recipient, subject, or body value is required.",
+      parameters: Type.Object(
+        {
+          accountId: accountIdParam,
+          identityId: Type.Optional(
+            Type.String({
+              description:
+                "Identity id returned by jmap_mail_identities. Uses the selected account identity when omitted.",
+            }),
+          ),
+          to: Type.Optional(
+            Type.Array(Type.String(), {
+              maxItems: 100,
+              description: "To recipient email addresses.",
+            }),
+          ),
+          cc: Type.Optional(
+            Type.Array(Type.String(), {
+              maxItems: 100,
+              description: "Cc recipient email addresses.",
+            }),
+          ),
+          bcc: Type.Optional(
+            Type.Array(Type.String(), {
+              maxItems: 100,
+              description: "Bcc recipient email addresses.",
+            }),
+          ),
+          subject: Type.Optional(
+            Type.String({
+              maxLength: 998,
+              description: "Draft subject, limited to 998 UTF-8 bytes by the client.",
+            }),
+          ),
+          text: Type.Optional(
+            Type.String({
+              maxLength: 1_000_000,
+              description: "Plain-text draft body, limited to 1 MB of UTF-8.",
+            }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (_toolCallId, rawParams) => {
+        const params = rawParams as Record<string, unknown>;
+        return runAuditedJmapTool("jmap_mail_draft_create", params, async () => {
+          const { account, client } = await resolveClient(optionalString(params.accountId));
+          const draft = await client.createDraft({
+            identityId: optionalString(params.identityId),
+            to: optionalStringArray(params, "to"),
+            cc: optionalStringArray(params, "cc"),
+            bcc: optionalStringArray(params, "bcc"),
+            subject: typeof params.subject === "string" ? params.subject : undefined,
+            text: typeof params.text === "string" ? params.text : undefined,
+          });
+          return jsonResult({
+            accountId: account.accountId,
+            submitted: false,
+            sent: false,
+            notice:
+              "Draft saved only. A separate explicit submission action is required before external delivery.",
+            draft,
+          });
+        });
+      },
+    },
+    {
       name: "jmap_mail_send",
       label: "Send JMAP mail",
       description:
@@ -528,9 +646,11 @@ export function createJmapTools(): AnyAgentTool[] {
 
 export const JMAP_TOOL_NAMES = [
   "jmap_mail_mailboxes",
+  "jmap_mail_identities",
   "jmap_mail_search",
   "jmap_mail_get",
   "jmap_mail_thread",
+  "jmap_mail_draft_create",
   "jmap_mail_send",
   "jmap_mail_update",
   "jmap_mail_move",

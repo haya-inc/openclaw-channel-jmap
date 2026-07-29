@@ -3,9 +3,10 @@
 A provider-neutral JMAP email channel and mailbox toolset for OpenClaw.
 
 It lets an OpenClaw agent receive email as conversations and deliberately
-search, read, inspect, send, reply, mark read/unread, and star/unstar messages.
-It can list and select mailboxes, search Junk or all mail, inspect safe links
-and attachment metadata, page through large threads, and move messages.
+search, read, inspect, draft, send, reply, mark read/unread, and star/unstar
+messages. It can list sending identities, save a draft without submitting it,
+list and select mailboxes, search Junk or all mail, inspect safe links and
+attachment metadata, page through large threads, and move messages.
 It only uses the mailbox-facing JMAP protocol; server administration is outside
 the plugin's scope.
 
@@ -73,9 +74,11 @@ or exposes mailbox identifiers. See
   `open` direct-message policies
 - Agent tools:
   - `jmap_mail_mailboxes`
+  - `jmap_mail_identities`
   - `jmap_mail_search`
   - `jmap_mail_get`
   - `jmap_mail_thread`
+  - `jmap_mail_draft_create`
   - `jmap_mail_send`
   - `jmap_mail_update`
   - `jmap_mail_move`
@@ -96,21 +99,24 @@ Email is an untrusted public input surface. The defaults therefore:
 - return attachment metadata but do not download attachment blobs;
 - bound thread reads to the latest 20 messages by default;
 - do not expose permanent deletion as an agent tool.
+- keep draft creation and submission as separate actions: creating a draft
+  never sends it.
 
 Each behavior can be enabled explicitly per account.
 
 ## Install
 
-Install from GitHub:
-
-```bash
-openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
-```
-
-For a reproducible deployment, pin a release tag or commit:
+Install the current stable release from GitHub:
 
 ```bash
 openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.4.1
+```
+
+An unpinned install follows unreleased `main` and is intended for development,
+not production:
+
+```bash
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 ```
 
 Restart the OpenClaw gateway after changing the plugin or channel
@@ -238,6 +244,20 @@ The project intends to cover all methods in RFC 8621. Current implementation,
 OpenClaw exposure, mutation risk, and target release are tracked in the
 [RFC 8621 coverage ledger](docs/rfc8621-coverage.md); the source of truth is
 [`rfc8621-coverage.json`](rfc8621-coverage.json).
+
+## Versioning and release gates
+
+Versions describe a coherent public contract, not the amount of work completed.
+Compatible fixes to a stable contract use patch releases. A minor release is
+cut only when its named capability set is complete across the supported safety
+and compatibility boundaries. Work may accumulate under `Unreleased` while the
+package version remains at the latest stable release.
+
+The current stable version is 0.4.1. The 0.5.0 deliberate-composition milestone
+is under development; the new identity and bounded draft tools on `main` are
+not a 0.5.0 release and are not a reason to upgrade production installations. See
+[Versioning and release philosophy](docs/versioning.md) and the
+machine-readable [`release-gates.json`](release-gates.json).
 
 ## Official compatibility labs
 

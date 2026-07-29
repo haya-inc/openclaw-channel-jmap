@@ -15,11 +15,17 @@ as a tool, whether it is used only inside the channel, or whether it is absent.
 | Release | Gate |
 |---|---|
 | 0.4 | Daily triage: mailbox discovery, all/Junk search, safe HTML/link and attachment inspection, bounded threads, reversible moves |
-| 0.5 | Deliberate composition: drafts, search snippets, identities, submission status, scheduling and undo where advertised |
+| 0.5 | Deliberate composition: draft lifecycle, search snippets, identities, explicit submission and status, scheduling and undo where advertised |
 | 0.6 | Complete synchronization: `changes` and `queryChanges` families with durable state and recovery |
 | 0.7 | Message transfer: copy, import, parse, blob upload/download, and attachment handling |
 | 0.8 | Protected account controls: mailbox/identity/vacation mutations behind explicit policy gates |
 | 1.0 | Every RFC 8621 method implemented, compatibility-tested, documented, and assigned a safe OpenClaw exposure |
+
+These are capability gates, not a release calendar. A completed slice on
+`main` remains unreleased until every required item for that minor version is
+ready. The authoritative 0.5 checklist is in
+[`release-gates.json`](../release-gates.json); the versioning rules are in
+[`versioning.md`](versioning.md).
 
 ## Safety model
 

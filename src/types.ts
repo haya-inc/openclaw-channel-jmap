@@ -171,6 +171,15 @@ export type JmapIdentity = {
   isDefault?: boolean;
 };
 
+export type JmapDraftCreateResult = {
+  emailId: string;
+  threadId?: string;
+  size?: number;
+  identityId: string;
+  identityEmail: string;
+  draftsMailboxId: string;
+};
+
 export type JmapThreadContext = {
   accountId: string;
   threadId: string;
