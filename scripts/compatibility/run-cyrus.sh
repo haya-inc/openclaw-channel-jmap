@@ -11,6 +11,7 @@ readonly LAB_USERNAME="compat@example.test"
 readonly LAB_PASSWORD="compat-password"
 readonly CONTAINER_NAME="openclaw-jmap-cyrus-${$}"
 readonly REPORT_PATH="${COMPATIBILITY_REPORT:-compatibility-report.json}"
+readonly STATEFUL_REPORT_PATH="${STATEFUL_CONTRACT_REPORT:-}"
 readonly LAB_SCOPE="${JMAP_COMPATIBILITY_SCOPE:-full}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
@@ -84,6 +85,14 @@ curl --silent --show-error --fail \
   "imap://127.0.0.1:${IMAP_PORT}/INBOX" \
   >/dev/null
 
+# Provision the standard special-use mailbox required by the draft lifecycle
+# contract. The account is disposable and exists only inside this lab container.
+curl --silent --show-error --fail \
+  --user "${LAB_USERNAME}:${LAB_PASSWORD}" \
+  --url "imap://127.0.0.1:${IMAP_PORT}" \
+  --request 'CREATE "Drafts" (USE (\Drafts))' \
+  >/dev/null
+
 # Add one local-only message so Email/get and Thread/get can be invoked.
 printf '%s\r\n' \
   'From: Compatibility Sender <sender@outside.test>' \
@@ -136,4 +145,36 @@ jq -c \
   }' \
   "${REPORT_PATH}"
 
-exit "${probe_exit_code}"
+stateful_exit_code=0
+if [[ -n "${STATEFUL_REPORT_PATH}" ]]; then
+  set +e
+  JMAP_STATEFUL_TEST_ALLOW_MUTATION=draft-only \
+    JMAP_TEST_ACCOUNT_CLASS=disposable \
+    node "${REPO_ROOT}/dist/src/stateful-contract-bin.js" \
+      --server "${SERVER_PROFILE}" \
+      --json \
+      >"${STATEFUL_REPORT_PATH}"
+  stateful_exit_code=$?
+  set -e
+  jq -e . "${STATEFUL_REPORT_PATH}" >/dev/null
+  jq -c \
+    --arg serverVersion "${SERVER_VERSION}" \
+    --arg image "${SERVER_IMAGE}" \
+    --argjson exitCode "${stateful_exit_code}" \
+    '{
+      serverProfile,
+      serverVersion: $serverVersion,
+      image: $image,
+      contract,
+      verdict,
+      exitCode: $exitCode,
+      failedChecks: [.checks[] | select(.status != "pass")],
+      probePolicy
+    }' \
+    "${STATEFUL_REPORT_PATH}"
+fi
+
+if [[ "${probe_exit_code}" -ne 0 ]]; then
+  exit "${probe_exit_code}"
+fi
+exit "${stateful_exit_code}"

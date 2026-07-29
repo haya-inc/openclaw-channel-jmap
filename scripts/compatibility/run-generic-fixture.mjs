@@ -4,6 +4,8 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { writeFile } from "node:fs/promises";
 import { runJmapCompatibilityCheck } from "../../dist/src/compatibility.js";
+import { JmapClient } from "../../dist/src/jmap-client.js";
+import { runStatefulDraftContract } from "../../dist/src/stateful-contract.js";
 
 const JMAP_CORE = "urn:ietf:params:jmap:core";
 const JMAP_MAIL = "urn:ietf:params:jmap:mail";
@@ -25,6 +27,35 @@ function respond(response, status, body) {
 
 let origin = "";
 let emailQueryCount = 0;
+let emailStateVersion = 1;
+let nextDraftId = 1;
+const drafts = new Map();
+
+function emailState() {
+  return `email-state-${emailStateVersion}`;
+}
+
+function fixtureDraft(id, value) {
+  return {
+    id,
+    blobId: `blob-${id}`,
+    threadId: `thread-${id}`,
+    mailboxIds: value.mailboxIds ?? {},
+    keywords: value.keywords ?? {},
+    from: value.from ?? [],
+    to: value.to ?? [],
+    cc: value.cc ?? [],
+    bcc: value.bcc ?? [],
+    replyTo: value.replyTo ?? [],
+    subject: value.subject ?? "",
+    textBody: value.textBody ?? [],
+    htmlBody: [],
+    bodyValues: value.bodyValues ?? {},
+    attachments: value.attachments ?? [],
+    size: Buffer.byteLength(JSON.stringify(value)),
+  };
+}
+
 const server = createServer(async (request, response) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   if (request.method === "GET" && path === "/.well-known/jmap") {
@@ -66,18 +97,32 @@ const server = createServer(async (request, response) => {
         {
           accountId: "fixture-account",
           state: "mailbox-state",
-          list: [{
-            id: "fixture-inbox",
-            name: "Inbox",
-            role: "inbox",
-            myRights: {
-              mayReadItems: true,
-              maySetSeen: true,
-              maySetKeywords: true,
-              mayAddItems: true,
-              mayRemoveItems: true,
+          list: [
+            {
+              id: "fixture-inbox",
+              name: "Inbox",
+              role: "inbox",
+              myRights: {
+                mayReadItems: true,
+                maySetSeen: true,
+                maySetKeywords: true,
+                mayAddItems: true,
+                mayRemoveItems: true,
+              },
             },
-          }],
+            {
+              id: "fixture-drafts",
+              name: "Drafts",
+              role: "drafts",
+              myRights: {
+                mayReadItems: true,
+                maySetSeen: true,
+                maySetKeywords: true,
+                mayAddItems: true,
+                mayRemoveItems: true,
+              },
+            },
+          ],
         },
         callId,
       ];
@@ -112,13 +157,67 @@ const server = createServer(async (request, response) => {
       ];
     }
     if (method === "Email/get") {
+      const ids = Array.isArray(args.ids) ? args.ids : [];
+      const list = ids.flatMap((id) => {
+        if (id === "fixture-email") {
+          return [{ id: "fixture-email", threadId: "fixture-thread" }];
+        }
+        const draft = drafts.get(id);
+        return draft ? [draft] : [];
+      });
       return [
         method,
         {
           accountId: "fixture-account",
-          state: "email-state",
-          list: [{ id: "fixture-email", threadId: "fixture-thread" }],
-          notFound: [],
+          state: emailState(),
+          list,
+          notFound: ids.filter(
+            (id) => id !== "fixture-email" && !drafts.has(id),
+          ),
+        },
+        callId,
+      ];
+    }
+    if (method === "Email/set") {
+      if (args.ifInState && args.ifInState !== emailState()) {
+        return [
+          "error",
+          { type: "stateMismatch", description: "fixture state changed" },
+          callId,
+        ];
+      }
+      const oldState = emailState();
+      const created = {};
+      const destroyed = [];
+      for (const [creationId, value] of Object.entries(args.create ?? {})) {
+        const id = `fixture-draft-${nextDraftId}`;
+        nextDraftId += 1;
+        const draft = fixtureDraft(id, value);
+        drafts.set(id, draft);
+        created[creationId] = {
+          id,
+          threadId: draft.threadId,
+          size: draft.size,
+        };
+      }
+      for (const id of args.destroy ?? []) {
+        if (drafts.delete(id)) {
+          destroyed.push(id);
+        }
+      }
+      if (Object.keys(created).length > 0 || destroyed.length > 0) {
+        emailStateVersion += 1;
+      }
+      return [
+        method,
+        {
+          accountId: "fixture-account",
+          oldState,
+          newState: emailState(),
+          created,
+          destroyed,
+          notCreated: {},
+          notDestroyed: {},
         },
         callId,
       ];
@@ -185,6 +284,35 @@ try {
   await writeFile(output, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   if (report.verdict !== "compatible") {
     process.exitCode = 1;
+  }
+
+  const statefulOutput = process.env.STATEFUL_CONTRACT_REPORT?.trim();
+  if (statefulOutput) {
+    const client = new JmapClient({
+      sessionUrl: `${origin}/.well-known/jmap`,
+      authMode: "bearer",
+      token: "fixture-token",
+    });
+    const statefulReport = await runStatefulDraftContract({
+      client,
+      serverProfile: "generic",
+      forceCleanup: async (emailIds) => {
+        const result = await client.callMethod("Email/set", {
+          accountId: client.state.mailAccountId,
+          destroy: emailIds,
+        });
+        const destroyed = Array.isArray(result.destroyed) ? result.destroyed : [];
+        return emailIds.every((emailId) => destroyed.includes(emailId));
+      },
+    });
+    await writeFile(
+      statefulOutput,
+      `${JSON.stringify(statefulReport, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+    if (statefulReport.verdict !== "compatible") {
+      process.exitCode = 1;
+    }
   }
 } finally {
   await new Promise((resolve, reject) => {

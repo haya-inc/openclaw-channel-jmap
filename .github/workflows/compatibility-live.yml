@@ -32,6 +32,11 @@ on:
         required: true
         default: live-service
         type: string
+      run_draft_contract:
+        description: Create and destroy recipient-free drafts in a dedicated test account
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -86,6 +91,21 @@ jobs:
             --server-version "${{ inputs.server_version }}" \
             --artifact "${{ inputs.target_artifact }}" \
             --source-revision "${GITHUB_SHA}"
+      - id: draft_contract
+        name: Run recipient-free draft contract
+        if: inputs.run_draft_contract
+        env:
+          JMAP_STATEFUL_TEST_ALLOW_MUTATION: draft-only
+          JMAP_TEST_ACCOUNT_CLASS: dedicated-test
+        shell: bash
+        run: |
+          set +e
+          node dist/src/stateful-contract-bin.js \
+            --server "${{ inputs.server }}" \
+            --json > stateful-contract-report.json
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -93,9 +113,15 @@ jobs:
           path: |
             compatibility-report.json
             compatibility-evidence.json
+            stateful-contract-report.json
           if-no-files-found: error
           retention-days: 90
       - name: Enforce compatibility verdict
         env:
           PROBE_EXIT_CODE: ${{ steps.probe.outputs.exit_code }}
         run: test "$PROBE_EXIT_CODE" -eq 0
+      - name: Enforce draft contract verdict
+        if: inputs.run_draft_contract
+        env:
+          DRAFT_CONTRACT_EXIT_CODE: ${{ steps.draft_contract.outputs.exit_code }}
+        run: test "$DRAFT_CONTRACT_EXIT_CODE" -eq 0
