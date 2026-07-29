@@ -37,8 +37,10 @@ Provider differences and test reports are welcome.
 - Standard environment-variable and credential-file sources
 - Polling through `Email/queryChanges`
 - Persistent inbound deduplication
+- Passive inbox mode that detects new mail without starting a model turn
 - Plain-text thread-aware sending through `Email/set` and
   `EmailSubmission/set`
+- Runtime telemetry for polling, inbound/outbound mail, and agent tool calls
 - Sender policy through OpenClaw's `disabled`, `allowlist`, `pairing`, and
   `open` direct-message policies
 - Agent tools:
@@ -75,7 +77,7 @@ openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 For a reproducible deployment, pin a release tag or commit:
 
 ```bash
-openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.1.1
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.1.4
 ```
 
 Restart the OpenClaw gateway after changing the plugin or channel
@@ -102,6 +104,7 @@ Then configure the channel:
       "enabled": true,
       "dmPolicy": "allowlist",
       "allowFrom": ["owner@example.com"],
+      "dispatchInbound": false,
       "autoReply": false,
       "markAsRead": false,
       "processExistingUnread": false
@@ -128,6 +131,7 @@ export JMAP_API_TOKEN='your-token'
       "enabled": true,
       "authMode": "bearer",
       "dmPolicy": "allowlist",
+      "dispatchInbound": false,
       "allowFrom": ["owner@example.com"]
     }
   }
@@ -146,6 +150,7 @@ Top-level settings are inherited by named accounts:
     "jmap": {
       "sessionUrl": "https://mail.example.com/.well-known/jmap",
       "dmPolicy": "allowlist",
+      "dispatchInbound": false,
       "autoReply": false,
       "accounts": {
         "support": {
@@ -175,6 +180,7 @@ Top-level settings are inherited by named accounts:
 | `pollIntervalSec` | `20` | Polling interval, 5–300 seconds |
 | `dmPolicy` | `allowlist` | Sender access policy |
 | `allowFrom` | `[]` | Allowed sender addresses; `open` requires `["*"]` |
+| `dispatchInbound` | `true` | Start an agent turn for accepted new mail; set `false` for passive/search-only inboxes |
 | `autoReply` | `false` | Send the model response back to the email thread |
 | `markAsRead` | `false` | Mark successfully handled inbound mail read |
 | `processExistingUnread` | `false` | Process unread mail already present at startup |
@@ -195,6 +201,24 @@ The plugin requires the JMAP Core, Mail, and Submission capabilities and uses:
 - `EmailSubmission/set`
 
 It does not need a Stalwart management token or server-admin permission.
+
+## Runtime status and evaluation
+
+`openclaw channels status --json` exposes per-account counters and timestamps
+without logging message bodies or tool arguments:
+
+- latest successful poll and poll error, with success/error counts;
+- latest detected inbound message, processing latency, and inbound count;
+- latest outbound message and outbound count;
+- latest JMAP agent tool name, duration, success/error timestamps, and
+  call/error counts.
+
+Tool logs contain only the tool name, outcome, duration, and error type. They do
+not contain search terms, addresses, subjects, message IDs, or message bodies.
+
+With `dispatchInbound: false`, new mail is still detected and deduplicated, but
+it does not start an agent turn. The agent can inspect it later with
+`jmap_mail_search`, `jmap_mail_get`, and `jmap_mail_thread`.
 
 ## Delivery semantics
 

@@ -12,3 +12,5 @@ mailbox or app password with only the JMAP permissions it needs.
 
 Inbound email is untrusted input. Keep `autoReply`, `markAsRead`, and
 `processExistingUnread` disabled until the mailbox policy has been reviewed.
+For mailbox assistants that search mail on demand, also set
+`dispatchInbound: false` so arbitrary inbound mail cannot start a model turn.

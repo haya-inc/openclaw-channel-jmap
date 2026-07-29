@@ -9,6 +9,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { CoreConfig, JmapInboundMessage, JmapResolvedAccount } from "./types.js";
 import { getJmapRuntime } from "./runtime.js";
 import { sendJmapReplyToThread } from "./send.js";
+import { recordJmapInbound } from "./status.js";
 import { resolveThreadSession } from "./thread-session.js";
 
 const CHANNEL_ID = "jmap" as const;
@@ -46,9 +47,17 @@ export async function handleJmapInbound(params: {
     return;
   }
 
-  statusSink?.({ lastInboundAt: message.receivedAt });
+  const handledAt = Date.now();
+  recordJmapInbound(account.accountId, message.receivedAt, handledAt);
+  statusSink?.({ lastInboundAt: handledAt });
 
   const dmPolicy = account.config.dmPolicy ?? "allowlist";
+  if (account.config.dispatchInbound === false) {
+    runtime.info(
+      `inbound dispatch suppressed thread=${message.threadId} sender=${message.senderEmail} (dispatchInbound=false)`,
+    );
+    return;
+  }
   const configAllowFrom = normalizeAllowFrom(account.config.allowFrom);
   const shouldComputeCommandAuth = core.channel.commands.shouldComputeCommandAuthorized(
     rawBody,

@@ -5,6 +5,11 @@ import { extractTextFromEmail } from "./jmap-email.js";
 import { JmapClient } from "./jmap-client.js";
 import { getJmapRuntime } from "./runtime.js";
 import { sendJmapMessageToAddress, sendJmapReplyToThread } from "./send.js";
+import {
+  recordJmapToolFailed,
+  recordJmapToolStarted,
+  recordJmapToolSucceeded,
+} from "./status.js";
 import { getJmapClient, setJmapClient } from "./store.js";
 import type { CoreConfig, JmapEmail, JmapResolvedAccount } from "./types.js";
 import { DEFAULT_MAX_BODY_BYTES } from "./types.js";
@@ -117,6 +122,41 @@ const accountIdParam = Type.Optional(
   Type.String({ description: "Configured JMAP account id. Uses the default account when omitted." }),
 );
 
+async function runAuditedJmapTool<T>(
+  toolName: string,
+  params: Record<string, unknown>,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const cfg = getJmapRuntime().config.loadConfig() as CoreConfig;
+  const account = resolveJmapAccount({
+    cfg,
+    accountId: optionalString(params.accountId),
+  });
+  const logger = getJmapRuntime().logging.getChildLogger({
+    channel: "jmap",
+    accountId: account.accountId,
+  });
+  const startedAt = Date.now();
+  recordJmapToolStarted(account.accountId, toolName, startedAt);
+  logger.info(`tool invocation started name=${toolName}`);
+  try {
+    const result = await operation();
+    const completedAt = Date.now();
+    recordJmapToolSucceeded(account.accountId, toolName, startedAt, completedAt);
+    logger.info(`tool invocation succeeded name=${toolName} durationMs=${completedAt - startedAt}`);
+    return result;
+  } catch (error) {
+    const completedAt = Date.now();
+    recordJmapToolFailed(account.accountId, toolName, startedAt, completedAt);
+    logger.warn(
+      `tool invocation failed name=${toolName} durationMs=${completedAt - startedAt} errorType=${
+        error instanceof Error ? error.name : typeof error
+      }`,
+    );
+    throw error;
+  }
+}
+
 export function createJmapTools(): AnyAgentTool[] {
   return [
     {
@@ -146,23 +186,25 @@ export function createJmapTools(): AnyAgentTool[] {
       ),
       execute: async (_toolCallId, rawParams) => {
         const params = rawParams as Record<string, unknown>;
-        const { account, client } = await resolveClient(optionalString(params.accountId));
-        const emails = await client.searchEmails({
-          text: optionalString(params.text),
-          from: optionalString(params.from),
-          to: optionalString(params.to),
-          subject: optionalString(params.subject),
-          after: optionalString(params.after),
-          before: optionalString(params.before),
-          unread: typeof params.unread === "boolean" ? params.unread : undefined,
-          limit: typeof params.limit === "number" ? params.limit : undefined,
-        });
-        return jsonResult({
-          safetyNotice: SAFETY_NOTICE,
-          accountId: account.accountId,
-          emails: emails.map((email) =>
-            emailResult(email, { includeBody: false, maxBodyBytes: DEFAULT_MAX_BODY_BYTES }),
-          ),
+        return runAuditedJmapTool("jmap_mail_search", params, async () => {
+          const { account, client } = await resolveClient(optionalString(params.accountId));
+          const emails = await client.searchEmails({
+            text: optionalString(params.text),
+            from: optionalString(params.from),
+            to: optionalString(params.to),
+            subject: optionalString(params.subject),
+            after: optionalString(params.after),
+            before: optionalString(params.before),
+            unread: typeof params.unread === "boolean" ? params.unread : undefined,
+            limit: typeof params.limit === "number" ? params.limit : undefined,
+          });
+          return jsonResult({
+            safetyNotice: SAFETY_NOTICE,
+            accountId: account.accountId,
+            emails: emails.map((email) =>
+              emailResult(email, { includeBody: false, maxBodyBytes: DEFAULT_MAX_BODY_BYTES }),
+            ),
+          });
         });
       },
     },
@@ -182,22 +224,24 @@ export function createJmapTools(): AnyAgentTool[] {
       ),
       execute: async (_toolCallId, rawParams) => {
         const params = rawParams as Record<string, unknown>;
-        const emailId = requiredString(params, "emailId");
-        const { account, client } = await resolveClient(optionalString(params.accountId));
-        const email = (await client.getEmails([emailId]))[0];
-        if (!email) {
-          throw new Error(`JMAP email not found: ${emailId}`);
-        }
-        if (params.markRead === true) {
-          await client.updateEmailKeywords([emailId], { seen: true });
-        }
-        return jsonResult({
-          safetyNotice: SAFETY_NOTICE,
-          accountId: account.accountId,
-          email: emailResult(email, {
-            includeBody: true,
-            maxBodyBytes: account.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
-          }),
+        return runAuditedJmapTool("jmap_mail_get", params, async () => {
+          const emailId = requiredString(params, "emailId");
+          const { account, client } = await resolveClient(optionalString(params.accountId));
+          const email = (await client.getEmails([emailId]))[0];
+          if (!email) {
+            throw new Error(`JMAP email not found: ${emailId}`);
+          }
+          if (params.markRead === true) {
+            await client.updateEmailKeywords([emailId], { seen: true });
+          }
+          return jsonResult({
+            safetyNotice: SAFETY_NOTICE,
+            accountId: account.accountId,
+            email: emailResult(email, {
+              includeBody: true,
+              maxBodyBytes: account.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+            }),
+          });
         });
       },
     },
@@ -214,19 +258,21 @@ export function createJmapTools(): AnyAgentTool[] {
       ),
       execute: async (_toolCallId, rawParams) => {
         const params = rawParams as Record<string, unknown>;
-        const threadId = requiredString(params, "threadId");
-        const { account, client } = await resolveClient(optionalString(params.accountId));
-        const emails = await client.getThreadEmails(threadId);
-        return jsonResult({
-          safetyNotice: SAFETY_NOTICE,
-          accountId: account.accountId,
-          threadId,
-          emails: emails.map((email) =>
-            emailResult(email, {
-              includeBody: true,
-              maxBodyBytes: account.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
-            }),
-          ),
+        return runAuditedJmapTool("jmap_mail_thread", params, async () => {
+          const threadId = requiredString(params, "threadId");
+          const { account, client } = await resolveClient(optionalString(params.accountId));
+          const emails = await client.getThreadEmails(threadId);
+          return jsonResult({
+            safetyNotice: SAFETY_NOTICE,
+            accountId: account.accountId,
+            threadId,
+            emails: emails.map((email) =>
+              emailResult(email, {
+                includeBody: true,
+                maxBodyBytes: account.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+              }),
+            ),
+          });
         });
       },
     },
@@ -247,21 +293,23 @@ export function createJmapTools(): AnyAgentTool[] {
       ),
       execute: async (_toolCallId, rawParams) => {
         const params = rawParams as Record<string, unknown>;
-        const accountId = optionalString(params.accountId);
-        const text = requiredString(params, "text");
-        const threadId = optionalString(params.threadId);
-        if (threadId) {
-          const result = await sendJmapReplyToThread({ accountId, threadId, text });
-          return jsonResult({ accountId: accountId ?? "default", ...result });
-        }
-        const toEmail = requiredString(params, "to");
-        const result = await sendJmapMessageToAddress({
-          accountId,
-          toEmail,
-          text,
-          subject: optionalString(params.subject),
+        return runAuditedJmapTool("jmap_mail_send", params, async () => {
+          const accountId = optionalString(params.accountId);
+          const text = requiredString(params, "text");
+          const threadId = optionalString(params.threadId);
+          if (threadId) {
+            const result = await sendJmapReplyToThread({ accountId, threadId, text });
+            return jsonResult({ accountId: accountId ?? "default", ...result });
+          }
+          const toEmail = requiredString(params, "to");
+          const result = await sendJmapMessageToAddress({
+            accountId,
+            toEmail,
+            text,
+            subject: optionalString(params.subject),
+          });
+          return jsonResult({ accountId: accountId ?? "default", to: toEmail, ...result });
         });
-        return jsonResult({ accountId: accountId ?? "default", to: toEmail, ...result });
       },
     },
     {
@@ -283,13 +331,15 @@ export function createJmapTools(): AnyAgentTool[] {
       ),
       execute: async (_toolCallId, rawParams) => {
         const params = rawParams as Record<string, unknown>;
-        const emailIds = readEmailIds(params);
-        const { account, client } = await resolveClient(optionalString(params.accountId));
-        await client.updateEmailKeywords(emailIds, {
-          seen: typeof params.read === "boolean" ? params.read : undefined,
-          flagged: typeof params.starred === "boolean" ? params.starred : undefined,
+        return runAuditedJmapTool("jmap_mail_update", params, async () => {
+          const emailIds = readEmailIds(params);
+          const { account, client } = await resolveClient(optionalString(params.accountId));
+          await client.updateEmailKeywords(emailIds, {
+            seen: typeof params.read === "boolean" ? params.read : undefined,
+            flagged: typeof params.starred === "boolean" ? params.starred : undefined,
+          });
+          return jsonResult({ accountId: account.accountId, updated: emailIds });
         });
-        return jsonResult({ accountId: account.accountId, updated: emailIds });
       },
     },
   ];

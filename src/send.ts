@@ -5,6 +5,7 @@ import { JmapMethodError } from "./jmap-client.js";
 import { JmapClient as JmapClientImpl } from "./jmap-client.js";
 import { isJmapThreadTarget, normalizeJmapTarget, parseJmapThreadTarget } from "./normalize.js";
 import { getJmapRuntime } from "./runtime.js";
+import { recordJmapOutbound } from "./status.js";
 import { getJmapClient, getThreadContext, setJmapClient, setThreadContext } from "./store.js";
 
 function logJmapOutbound(accountId: string, message: string) {
@@ -19,14 +20,14 @@ async function resolveClient(params: {
   accountId?: string | null;
   cfg?: CoreConfig;
   preferExisting?: boolean;
-}): Promise<JmapClient> {
+}): Promise<{ accountId: string; client: JmapClient }> {
   const normalizedAccountId = params.accountId?.trim() || "default";
   const existing = getJmapClient(normalizedAccountId);
   if (existing && (params.preferExisting ?? true)) {
     if (!existing.isReady) {
       await existing.init();
     }
-    return existing;
+    return { accountId: normalizedAccountId, client: existing };
   }
 
   const core = getJmapRuntime();
@@ -46,7 +47,7 @@ async function resolveClient(params: {
   });
   await client.init();
   setJmapClient(account.accountId, client);
-  return client;
+  return { accountId: account.accountId, client };
 }
 
 export async function sendJmapReplyToThread(params: {
@@ -66,7 +67,7 @@ export async function sendJmapReplyToThread(params: {
     throw new Error("JMAP outbound message is empty");
   }
 
-  const client = await resolveClient({ accountId: params.accountId });
+  const { accountId, client } = await resolveClient({ accountId: params.accountId });
   const state = client.state;
   let context = getThreadContext({
     accountId: state.mailAccountId,
@@ -89,14 +90,15 @@ export async function sendJmapReplyToThread(params: {
     mediaUrls,
   });
   logJmapOutbound(
-    state.mailAccountId,
+    accountId,
     `outbound thread reply sent thread=${threadId} messageId=${result.messageId} target=${context.replyTo.map((x) => x.email).join(",") || context.from.map((x) => x.email).join(",") || context.to.map((x) => x.email).join(",")}`,
   );
   getJmapRuntime().channel.activity.record({
     channel: "jmap",
-    accountId: state.mailAccountId,
+    accountId,
     direction: "outbound",
   });
+  recordJmapOutbound(accountId);
   return result;
 }
 
@@ -106,21 +108,22 @@ export async function sendJmapMessageToAddress(params: {
   text: string;
   subject?: string;
 }): Promise<{ messageId: string; threadId?: string }> {
-  const client = await resolveClient({ accountId: params.accountId });
+  const { accountId, client } = await resolveClient({ accountId: params.accountId });
   const result = await client.sendToAddress({
     toEmail: params.toEmail,
     text: params.text,
     subject: params.subject,
   });
   logJmapOutbound(
-    client.state.mailAccountId,
+    accountId,
     `outbound direct sent to=${params.toEmail} messageId=${result.messageId}`,
   );
   getJmapRuntime().channel.activity.record({
     channel: "jmap",
-    accountId: client.state.mailAccountId,
+    accountId,
     direction: "outbound",
   });
+  recordJmapOutbound(accountId);
   return result;
 }
 

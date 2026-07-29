@@ -70,5 +70,6 @@ describe("resolveJmapAccount", () => {
     expect(account.config.autoReply).not.toBe(true);
     expect(account.config.markAsRead).not.toBe(true);
     expect(account.config.processExistingUnread).not.toBe(true);
+    expect(account.config.dispatchInbound).not.toBe(false);
   });
 });

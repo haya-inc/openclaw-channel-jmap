@@ -12,6 +12,7 @@ export const JmapAccountSchemaBase = z
     apiTokenFile: z.string().optional(),
     sessionUrl: z.string().url().optional(),
     pollIntervalSec: z.number().int().min(5).max(300).optional(),
+    dispatchInbound: z.boolean().optional().default(true),
     autoReply: z.boolean().optional().default(false),
     markAsRead: z.boolean().optional().default(false),
     processExistingUnread: z.boolean().optional().default(false),

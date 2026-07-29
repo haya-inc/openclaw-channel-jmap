@@ -19,6 +19,7 @@ import { jmapPairing } from "./inbound.js";
 import { monitorJmapProvider } from "./monitor.js";
 import { looksLikeEmailAddress, normalizeJmapTarget, parseJmapThreadTarget } from "./normalize.js";
 import { sendJmapByTarget } from "./send.js";
+import { getJmapRuntimeStatus, type JmapRuntimeStatus } from "./status.js";
 
 const meta = {
   id: "jmap",
@@ -286,6 +287,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
   },
   status: {
     defaultRuntime: {
+      ...getJmapRuntimeStatus(DEFAULT_ACCOUNT_ID),
       accountId: DEFAULT_ACCOUNT_ID,
       running: false,
       lastStartAt: null,
@@ -302,25 +304,47 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
       lastStopAt: snapshot.lastStopAt ?? null,
       lastError: snapshot.lastError ?? null,
     }),
-    buildAccountSnapshot: ({ account, runtime }) => ({
-      accountId: account.accountId,
-      name: account.name,
-      enabled: account.enabled,
-      configured: account.configured,
-      tokenSource: account.tokenSource,
-      authMode: account.authMode,
-      baseUrl: account.sessionUrl,
-      mode: `polling:${account.pollIntervalSec}s`,
-      running: runtime?.running ?? false,
-      lastStartAt: runtime?.lastStartAt ?? null,
-      lastStopAt: runtime?.lastStopAt ?? null,
-      lastError: runtime?.lastError ?? null,
-      lastInboundAt: runtime?.lastInboundAt ?? null,
-      lastOutboundAt: runtime?.lastOutboundAt ?? null,
-      dmPolicy: account.config.dmPolicy ?? "allowlist",
-      autoReply: account.config.autoReply === true,
-      markAsRead: account.config.markAsRead === true,
-    }),
+    buildAccountSnapshot: ({ account, runtime }) => {
+      const activity = runtime as
+        | (typeof runtime & Partial<JmapRuntimeStatus>)
+        | undefined;
+      return {
+        accountId: account.accountId,
+        name: account.name,
+        enabled: account.enabled,
+        configured: account.configured,
+        tokenSource: account.tokenSource,
+        authMode: account.authMode,
+        baseUrl: account.sessionUrl,
+        mode: `polling:${account.pollIntervalSec}s`,
+        running: activity?.running ?? false,
+        lastStartAt: activity?.lastStartAt ?? null,
+        lastStopAt: activity?.lastStopAt ?? null,
+        lastError: activity?.lastError ?? null,
+        lastInboundAt: activity?.lastInboundAt ?? null,
+        lastOutboundAt: activity?.lastOutboundAt ?? null,
+        lastPollAt: activity?.lastPollAt ?? null,
+        lastSuccessfulPollAt: activity?.lastSuccessfulPollAt ?? null,
+        lastPollErrorAt: activity?.lastPollErrorAt ?? null,
+        pollCount: activity?.pollCount ?? 0,
+        pollErrorCount: activity?.pollErrorCount ?? 0,
+        lastInboundMessageAt: activity?.lastInboundMessageAt ?? null,
+        lastInboundLatencyMs: activity?.lastInboundLatencyMs ?? null,
+        inboundCount: activity?.inboundCount ?? 0,
+        outboundCount: activity?.outboundCount ?? 0,
+        lastToolCallAt: activity?.lastToolCallAt ?? null,
+        lastToolSucceededAt: activity?.lastToolSucceededAt ?? null,
+        lastToolErrorAt: activity?.lastToolErrorAt ?? null,
+        lastToolName: activity?.lastToolName ?? null,
+        lastToolDurationMs: activity?.lastToolDurationMs ?? null,
+        toolCallCount: activity?.toolCallCount ?? 0,
+        toolErrorCount: activity?.toolErrorCount ?? 0,
+        dmPolicy: account.config.dmPolicy ?? "allowlist",
+        dispatchInbound: account.config.dispatchInbound !== false,
+        autoReply: account.config.autoReply === true,
+        markAsRead: account.config.markAsRead === true,
+      };
+    },
   },
   gateway: {
     startAccount: async (ctx) => {

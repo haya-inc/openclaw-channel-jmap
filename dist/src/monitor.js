@@ -5,6 +5,7 @@ import { createJmapInboundDeduper } from "./inbound-dedupe.js";
 import { JmapClient, parseInboundEmail } from "./jmap-client.js";
 import { getJmapRuntime } from "./runtime.js";
 import { isRecoverableJmapPollError } from "./send.js";
+import { bindJmapStatusSink, recordJmapPollError, recordJmapPollSuccess, } from "./status.js";
 import { clearJmapAccountState, setJmapClient, setThreadContext } from "./store.js";
 const UNREAD_SWEEP_LIMIT = 50;
 const UNREAD_SWEEP_MAX_ROUNDS = 20;
@@ -24,7 +25,7 @@ function formatError(error) {
     }
 }
 async function pollLoop(params) {
-    const { client, account, config, abortSignal, statusSink } = params;
+    const { client, account, config, abortSignal } = params;
     const runtimeCore = getJmapRuntime();
     const runtime = getJmapRuntime().logging.getChildLogger({
         channel: "jmap",
@@ -87,7 +88,6 @@ async function pollLoop(params) {
                 },
                 account,
                 config,
-                statusSink,
             });
             runtimeCore.channel.activity.record({
                 channel: "jmap",
@@ -150,7 +150,7 @@ async function pollLoop(params) {
             if (addedIds.length > 0) {
                 await processEmailIds(addedIds, "query-changes");
             }
-            statusSink?.({ lastError: null });
+            recordJmapPollSuccess(account.accountId);
             if (changes.hasMoreChanges) {
                 continue;
             }
@@ -158,7 +158,7 @@ async function pollLoop(params) {
         }
         catch (error) {
             const message = formatError(error);
-            statusSink?.({ lastError: message });
+            recordJmapPollError(account.accountId, message);
             if (isRecoverableJmapPollError(error)) {
                 runtime.warn(`recoverable poll error: ${message}; resetting query state`);
                 queryState = await client.queryInboxState();
@@ -193,6 +193,7 @@ export async function monitorJmapProvider(opts) {
     })
         .info(`initialized jmap client apiUrl=${init.apiUrl} mailAccountId=${init.mailAccountId} submissionAccountId=${init.submissionAccountId} identity=${init.identityEmail}`);
     setJmapClient(account.accountId, client);
+    const unbindStatus = bindJmapStatusSink(account.accountId, opts.statusSink);
     const controller = new AbortController();
     const externalSignal = opts.abortSignal;
     const onAbort = () => controller.abort();
@@ -209,14 +210,13 @@ export async function monitorJmapProvider(opts) {
         account,
         config,
         abortSignal: controller.signal,
-        statusSink: opts.statusSink,
     }).catch((error) => {
         const logger = core.logging.getChildLogger({
             channel: "jmap",
             accountId: account.accountId,
         });
         logger.error(`monitor loop exited: ${formatError(error)}`);
-        opts.statusSink?.({ lastError: formatError(error) });
+        recordJmapPollError(account.accountId, formatError(error));
     });
     return {
         stop: () => {
@@ -224,6 +224,7 @@ export async function monitorJmapProvider(opts) {
             if (externalSignal) {
                 externalSignal.removeEventListener("abort", onAbort);
             }
+            unbindStatus();
             clearJmapAccountState(account.accountId);
         },
     };

@@ -26,6 +26,7 @@ import type { CoreConfig } from "./types.js";
 import { JMAP_MAIL, JMAP_SUBMISSION } from "./types.js";
 import { monitorJmapProvider } from "./monitor.js";
 import { setJmapRuntime } from "./runtime.js";
+import { getJmapRuntimeStatus, resetJmapRuntimeStatusForTests } from "./status.js";
 import { clearJmapAccountState } from "./store.js";
 import { JmapMockServer } from "./test-utils/jmap-mock-server.js";
 
@@ -122,6 +123,7 @@ describe("monitorJmapProvider polling chain", () => {
     stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-jmap-monitor-"));
     mocks.handleJmapInboundMock.mockClear();
     mocks.sleepMock.mockClear();
+    resetJmapRuntimeStatusForTests();
   });
 
   afterEach(async () => {
@@ -217,7 +219,18 @@ describe("monitorJmapProvider polling chain", () => {
       direction: "inbound",
       at: expect.any(Number),
     });
-    expect(statusSink).toHaveBeenCalledWith({ lastError: null });
+    expect(statusSink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastSuccessfulPollAt: expect.any(Number),
+        pollCount: 1,
+        lastError: null,
+      }),
+    );
+    expect(getJmapRuntimeStatus("default")).toMatchObject({
+      lastSuccessfulPollAt: expect.any(Number),
+      pollCount: 1,
+      pollErrorCount: 0,
+    });
     expect(server.pendingResponses).toBe(0);
     expect(server.getCalls("Email/query")).toHaveLength(1);
     expect(server.getCalls("Email/get")).toHaveLength(1);

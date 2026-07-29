@@ -28,6 +28,7 @@ export type JmapAccountConfig = {
   apiTokenFile?: string;
   sessionUrl?: string;
   pollIntervalSec?: number;
+  dispatchInbound?: boolean;
   autoReply?: boolean;
   markAsRead?: boolean;
   processExistingUnread?: boolean;

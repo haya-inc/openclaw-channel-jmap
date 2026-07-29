@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.4
+
+- Add lossless per-account runtime status for polling, inbound/outbound mail,
+  latency, and model-visible JMAP tool calls.
+- Add anonymous tool outcome logs and full mocked execution coverage for all
+  five JMAP tools.
+- Add `dispatchInbound: false` passive inbox mode so new mail remains searchable
+  without starting a model turn.
+- Attribute outbound channel activity to the configured OpenClaw account rather
+  than the provider-internal JMAP account id.
+
+## 0.1.3
+
+- Keep the passive JMAP poller alive until OpenClaw explicitly stops the
+  channel.
+
 ## 0.1.2
 
 - Deliver automated and bulk messages for OTP/verification inspection while
