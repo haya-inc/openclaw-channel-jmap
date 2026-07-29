@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Include verified build output in Git so OpenClaw's script-disabled Git
+  installer can load the plugin directly.
+
 ## 0.1.0
 
 - Provider-neutral JMAP channel for OpenClaw.

@@ -74,7 +74,7 @@ openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 For a reproducible deployment, pin a release tag or commit:
 
 ```bash
-openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.1.0
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.1.1
 ```
 
 Restart the OpenClaw gateway after changing the plugin or channel
