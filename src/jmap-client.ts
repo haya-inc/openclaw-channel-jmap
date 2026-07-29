@@ -4,6 +4,7 @@ import type {
   JmapIdentity,
   JmapMailbox,
   JmapQueryChangesResult,
+  JmapSearchParams,
   JmapSendResult,
   JmapThreadContext,
 } from "./types.js";
@@ -66,13 +67,30 @@ export class JmapMethodError extends Error {
 export class JmapClient {
   private readonly sessionUrl: string;
   private readonly token: string;
+  private readonly authMode: "bearer" | "basic";
+  private readonly username: string;
   private readonly accountIdHint?: string;
   private initState: JmapClientInit | null = null;
 
-  constructor(params: { sessionUrl: string; token: string; accountIdHint?: string }) {
+  constructor(params: {
+    sessionUrl: string;
+    token: string;
+    authMode?: "bearer" | "basic";
+    username?: string;
+    accountIdHint?: string;
+  }) {
     this.sessionUrl = params.sessionUrl;
     this.token = params.token;
+    this.authMode = params.authMode ?? "bearer";
+    this.username = params.username?.trim() ?? "";
     this.accountIdHint = params.accountIdHint;
+  }
+
+  private get authorizationHeader(): string {
+    if (this.authMode === "basic") {
+      return `Basic ${Buffer.from(`${this.username}:${this.token}`, "utf8").toString("base64")}`;
+    }
+    return `Bearer ${this.token}`;
   }
 
   get isReady(): boolean {
@@ -218,6 +236,11 @@ export class JmapClient {
         "textBody",
         "htmlBody",
         "bodyValues",
+        "keywords",
+        "size",
+        "header:Auto-Submitted:asText",
+        "header:Precedence:asText",
+        "header:List-Id:asText",
       ],
       fetchTextBodyValues: true,
       fetchHTMLBodyValues: false,
@@ -226,25 +249,77 @@ export class JmapClient {
     return ensureArray(result.list as JmapEmail[]).filter((item) => item.id);
   }
 
-  async markEmailsSeen(ids: string[]): Promise<void> {
+  async searchEmails(params: JmapSearchParams = {}): Promise<JmapEmail[]> {
     const state = this.state;
+    const limit = Math.max(1, Math.min(100, Math.trunc(params.limit ?? 20)));
+    const filter = compact({
+      inMailbox: state.inboxMailboxId,
+      text: params.text?.trim() || undefined,
+      from: params.from?.trim() || undefined,
+      to: params.to?.trim() || undefined,
+      subject: params.subject?.trim() || undefined,
+      after: params.after?.trim() || undefined,
+      before: params.before?.trim() || undefined,
+      hasKeyword: params.unread === false ? "$seen" : undefined,
+      notKeyword: params.unread === true ? "$seen" : undefined,
+    });
+    const result = await this.callMethod("Email/query", {
+      accountId: state.mailAccountId,
+      filter,
+      sort: [{ property: "receivedAt", isAscending: false }],
+      calculateTotal: false,
+      position: 0,
+      limit,
+    });
+    const ids = ensureArray(result.ids as string[])
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const emails = await this.getEmails(ids);
+    const byId = new Map(emails.map((email) => [email.id, email]));
+    return ids.map((id) => byId.get(id)).filter((email): email is JmapEmail => Boolean(email));
+  }
+
+  async getThreadEmails(threadId: string): Promise<JmapEmail[]> {
+    const normalizedThreadId = threadId.trim();
+    if (!normalizedThreadId) {
+      throw new Error("JMAP thread id is required");
+    }
+    const result = await this.callMethod("Thread/get", {
+      accountId: this.state.mailAccountId,
+      ids: [normalizedThreadId],
+    });
+    const thread = ensureArray(
+      result.list as Array<{ id: string; emailIds?: string[] }>,
+    ).find((entry) => entry.id === normalizedThreadId);
+    if (!thread) {
+      return [];
+    }
+    const emails = await this.getEmails(ensureArray(thread.emailIds));
+    return emails.sort((a, b) => parseTimestampMs(a) - parseTimestampMs(b));
+  }
+
+  async markEmailsSeen(ids: string[]): Promise<void> {
+    await this.updateEmailKeywords(ids, { seen: true });
+  }
+
+  async updateEmailKeywords(
+    ids: string[],
+    changes: { seen?: boolean; flagged?: boolean },
+  ): Promise<void> {
     const validIds = ids.map((id) => id.trim()).filter(Boolean);
     if (validIds.length === 0) {
-      return;
+      throw new Error("At least one JMAP email id is required");
     }
-    const update = Object.fromEntries(
-      validIds.map((id) => [
-        id,
-        {
-          keywords: {
-            $seen: true,
-          },
-        },
-      ]),
-    );
+    const patch = compact({
+      "keywords/$seen": changes.seen,
+      "keywords/$flagged": changes.flagged,
+    });
+    if (Object.keys(patch).length === 0) {
+      throw new Error("No JMAP keyword changes were requested");
+    }
     await this.callMethod("Email/set", {
-      accountId: state.mailAccountId,
-      update,
+      accountId: this.state.mailAccountId,
+      update: Object.fromEntries(validIds.map((id) => [id, patch])),
     });
   }
 
@@ -416,6 +491,11 @@ export class JmapClient {
           value: params.bodyText,
         },
       },
+      keywords: {
+        $draft: true,
+      },
+      "header:Auto-Submitted:asText": "auto-generated",
+      "header:X-Auto-Response-Suppress:asText": "All",
       inReplyTo: params.inReplyTo ? [params.inReplyTo] : undefined,
       references: params.references.length > 0 ? params.references : undefined,
     });
@@ -434,6 +514,16 @@ export class JmapClient {
       throw new Error("JMAP Email/set did not return created email id");
     }
 
+    const onSuccessUpdate: Record<string, boolean | null> = {
+      "keywords/$draft": null,
+    };
+    if (state.draftsMailboxId) {
+      onSuccessUpdate[`mailboxIds/${state.draftsMailboxId}`] = null;
+    }
+    if (state.sentMailboxId) {
+      onSuccessUpdate[`mailboxIds/${state.sentMailboxId}`] = true;
+    }
+
     const submissionSet = await this.callMethod("EmailSubmission/set", {
       accountId: state.submissionAccountId,
       create: {
@@ -441,6 +531,9 @@ export class JmapClient {
           emailId,
           identityId: state.identityId,
         },
+      },
+      onSuccessUpdateEmail: {
+        "#submitEmail": onSuccessUpdate,
       },
     });
 
@@ -462,7 +555,7 @@ export class JmapClient {
     const response = await fetch(this.sessionUrl, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${this.token}`,
+        Authorization: this.authorizationHeader,
         Accept: "application/json",
       },
     });
@@ -568,7 +661,7 @@ export class JmapClient {
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.token}`,
+        Authorization: this.authorizationHeader,
         "Content-Type": "application/json",
         Accept: "application/json",
       },

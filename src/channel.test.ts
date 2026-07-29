@@ -19,4 +19,18 @@ describe("parseInboundEmail", () => {
     expect(parsed?.subject).toBe("Hello");
     expect(parsed?.text).toBe("Preview text");
   });
+
+  it("rejects automated response email as an inbound agent turn", () => {
+    const parsed = parseInboundEmail({
+      email: {
+        id: "m2",
+        threadId: "t2",
+        from: [{ email: "mailer-daemon@example.com" }],
+        preview: "Delivery status notification",
+        "header:Auto-Submitted:asText": "auto-generated",
+      },
+    });
+
+    expect(parsed).toBeNull();
+  });
 });

@@ -12,8 +12,10 @@ vi.mock("./inbound.js", () => ({
   handleJmapInbound: mocks.handleJmapInboundMock,
 }));
 
-vi.mock("openclaw/plugin-sdk", async () => {
-  const actual = await vi.importActual<typeof import("openclaw/plugin-sdk")>("openclaw/plugin-sdk");
+vi.mock("openclaw/plugin-sdk/runtime-env", async () => {
+  const actual = await vi.importActual<typeof import("openclaw/plugin-sdk/runtime-env")>(
+    "openclaw/plugin-sdk/runtime-env",
+  );
   return {
     ...actual,
     sleep: mocks.sleepMock,
@@ -35,6 +37,7 @@ function createConfig(server: JmapMockServer): CoreConfig {
         apiToken: "test-token",
         sessionUrl: server.sessionUrl,
         pollIntervalSec: 20,
+        markAsRead: true,
       },
     },
   } as CoreConfig;
@@ -73,18 +76,14 @@ function enqueueInitChain(server: JmapMockServer) {
 function enqueuePollChain(params: {
   server: JmapMockServer;
   queryState: string;
-  startupUnreadIds: string[];
   queryChangesAddedIds: string[];
-  queryChangesUnreadIds: string[];
   emails?: Array<Record<string, unknown>>;
   markedSeenEmailIds?: string[];
 }) {
   const {
     server,
     queryState,
-    startupUnreadIds,
     queryChangesAddedIds,
-    queryChangesUnreadIds,
     emails,
     markedSeenEmailIds,
   } = params;
@@ -92,24 +91,6 @@ function enqueuePollChain(params: {
   server.enqueueMethod("Email/query", {
     queryState,
   });
-  server.enqueueMethod("Email/query", {
-    queryState: `${queryState}-startup-unread`,
-    ids: startupUnreadIds,
-  });
-
-  if ((emails ?? []).length > 0) {
-    server.enqueueMethod("Email/get", {
-      list: emails,
-    });
-  }
-
-  const seenIds = (markedSeenEmailIds ?? []).map((id) => id.trim()).filter(Boolean);
-  if (seenIds.length > 0) {
-    server.enqueueMethod("Email/set", {
-      updated: Object.fromEntries(seenIds.map((id) => [id, null])),
-    });
-  }
-
   server.enqueueMethod("Email/queryChanges", {
     oldQueryState: queryState,
     newQueryState: `${queryState}-next`,
@@ -118,10 +99,17 @@ function enqueuePollChain(params: {
   });
 
   if (queryChangesAddedIds.length > 0) {
-    server.enqueueMethod("Email/query", {
-      queryState: `${queryState}-changes-unread`,
-      ids: queryChangesUnreadIds,
-    });
+    if ((emails ?? []).length > 0) {
+      server.enqueueMethod("Email/get", {
+        list: emails,
+      });
+    }
+    const seenIds = (markedSeenEmailIds ?? []).map((id) => id.trim()).filter(Boolean);
+    if (seenIds.length > 0) {
+      server.enqueueMethod("Email/set", {
+        updated: Object.fromEntries(seenIds.map((id) => [id, null])),
+      });
+    }
   }
 }
 
@@ -172,9 +160,7 @@ describe("monitorJmapProvider polling chain", () => {
     enqueuePollChain({
       server,
       queryState: "q-1",
-      startupUnreadIds: ["mail-self", "mail-inbound"],
       queryChangesAddedIds: ["mail-self", "mail-inbound"],
-      queryChangesUnreadIds: ["mail-self", "mail-inbound"],
       emails: [
         {
           id: "mail-self",
@@ -226,22 +212,20 @@ describe("monitorJmapProvider polling chain", () => {
 
     expect(activityRecord).toHaveBeenCalledTimes(1);
     expect(activityRecord).toHaveBeenCalledWith({
-      channel: "jmap-email",
+      channel: "jmap",
       accountId: "default",
       direction: "inbound",
       at: expect.any(Number),
     });
     expect(statusSink).toHaveBeenCalledWith({ lastError: null });
     expect(server.pendingResponses).toBe(0);
-    expect(server.getCalls("Email/query")).toHaveLength(3);
+    expect(server.getCalls("Email/query")).toHaveLength(1);
     expect(server.getCalls("Email/get")).toHaveLength(1);
     const markSeenCall = server.getCalls("Email/set")[0];
     expect(markSeenCall?.args).toMatchObject({
       update: {
         "mail-inbound": {
-          keywords: {
-            $seen: true,
-          },
+          "keywords/$seen": true,
         },
       },
     });
@@ -258,9 +242,7 @@ describe("monitorJmapProvider polling chain", () => {
     enqueuePollChain({
       server,
       queryState: "q-first",
-      startupUnreadIds: ["mail-inbound"],
       queryChangesAddedIds: ["mail-inbound"],
-      queryChangesUnreadIds: ["mail-inbound"],
       emails: [
         {
           id: "mail-inbound",
@@ -284,15 +266,13 @@ describe("monitorJmapProvider polling chain", () => {
     enqueuePollChain({
       server,
       queryState: "q-second",
-      startupUnreadIds: ["mail-inbound"],
       queryChangesAddedIds: ["mail-inbound"],
-      queryChangesUnreadIds: ["mail-inbound"],
     });
 
     const secondMonitor = await monitorJmapProvider({ config });
     await vi.waitFor(() => {
       expect(server.getCalls("Email/queryChanges")).toHaveLength(2);
-      expect(server.getCalls("Email/query")).toHaveLength(6);
+      expect(server.getCalls("Email/query")).toHaveLength(2);
     });
 
     expect(mocks.handleJmapInboundMock).toHaveBeenCalledTimes(1);

@@ -4,12 +4,12 @@ import {
   DEFAULT_ACCOUNT_ID,
   deleteAccountFromConfigSection,
   formatPairingApproveHint,
-  missingTargetError,
   normalizeAccountId,
   setAccountEnabledInConfigSection,
   type ChannelPlugin,
-  type OpenClawConfig,
-} from "openclaw/plugin-sdk";
+} from "openclaw/plugin-sdk/channel-plugin-common";
+import { missingTargetError } from "openclaw/plugin-sdk/channel-feedback";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { CoreConfig } from "./types.js";
 import type { JmapResolvedAccount } from "./types.js";
 import { listJmapAccountIds, resolveDefaultJmapAccountId, resolveJmapAccount } from "./accounts.js";
@@ -20,11 +20,11 @@ import { looksLikeEmailAddress, normalizeJmapTarget, parseJmapThreadTarget } fro
 import { sendJmapByTarget } from "./send.js";
 
 const meta = {
-  id: "jmap-email",
+  id: "jmap",
   label: "JMAP Email",
   selectionLabel: "JMAP Email",
-  docsPath: "/channels/jmap-email",
-  docsLabel: "jmap-email",
+  docsPath: "/channels/jmap",
+  docsLabel: "jmap",
   blurb: "Email thread conversations over JMAP.",
   aliases: ["jmap", "jmail"],
   order: 85,
@@ -32,7 +32,7 @@ const meta = {
 };
 
 export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
-  id: "jmap-email",
+  id: "jmap",
   meta,
   pairing: jmapPairing,
   capabilities: {
@@ -41,8 +41,10 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
     media: true,
     blockStreaming: true,
   },
-  reload: { configPrefixes: ["channels.jmap-email"] },
-  configSchema: buildChannelConfigSchema(JmapConfigSchema),
+  reload: { configPrefixes: ["channels.jmap"] },
+  // OpenClaw ships its own Zod build; the runtime shape is compatible, while
+  // the generated declaration identities differ across package boundaries.
+  configSchema: buildChannelConfigSchema(JmapConfigSchema as never),
   config: {
     listAccountIds: (cfg) => listJmapAccountIds(cfg as CoreConfig),
     resolveAccount: (cfg, accountId) => resolveJmapAccount({ cfg: cfg as CoreConfig, accountId }),
@@ -50,7 +52,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
     setAccountEnabled: ({ cfg, accountId, enabled }) =>
       setAccountEnabledInConfigSection({
         cfg,
-        sectionKey: "jmap-email",
+        sectionKey: "jmap",
         accountId,
         enabled,
         allowTopLevel: true,
@@ -58,9 +60,18 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
     deleteAccount: ({ cfg, accountId }) =>
       deleteAccountFromConfigSection({
         cfg,
-        sectionKey: "jmap-email",
+        sectionKey: "jmap",
         accountId,
-        clearBaseFields: ["apiToken", "apiTokenFile", "sessionUrl", "name"],
+        clearBaseFields: [
+          "authMode",
+          "username",
+          "password",
+          "passwordFile",
+          "apiToken",
+          "apiTokenFile",
+          "sessionUrl",
+          "name",
+        ],
       }),
     isConfigured: (account) => account.configured,
     describeAccount: (account) => ({
@@ -69,6 +80,8 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
       enabled: account.enabled,
       configured: account.configured,
       tokenSource: account.tokenSource,
+      authMode: account.authMode,
+      username: account.username || undefined,
       sessionUrl: account.sessionUrl,
       pollIntervalSec: account.pollIntervalSec,
     }),
@@ -82,16 +95,16 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
   security: {
     resolveDmPolicy: ({ cfg, accountId, account }) => {
       const resolvedAccountId = accountId ?? account.accountId ?? DEFAULT_ACCOUNT_ID;
-      const useAccountPath = Boolean(cfg.channels?.["jmap-email"]?.accounts?.[resolvedAccountId]);
+      const useAccountPath = Boolean(cfg.channels?.["jmap"]?.accounts?.[resolvedAccountId]);
       const basePath = useAccountPath
-        ? `channels.jmap-email.accounts.${resolvedAccountId}.`
-        : "channels.jmap-email.";
+        ? `channels.jmap.accounts.${resolvedAccountId}.`
+        : "channels.jmap.";
       return {
-        policy: account.config.dmPolicy ?? "pairing",
+        policy: account.config.dmPolicy ?? "allowlist",
         allowFrom: account.config.allowFrom ?? [],
         policyPath: `${basePath}dmPolicy`,
         allowFromPath: `${basePath}allowFrom`,
-        approveHint: formatPairingApproveHint("jmap-email"),
+        approveHint: formatPairingApproveHint("jmap"),
         normalizeEntry: (raw) => raw.trim().toLowerCase(),
       };
     },
@@ -159,7 +172,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
     applyAccountName: ({ cfg, accountId, name }) =>
       applyAccountNameToChannelSection({
         cfg,
-        channelKey: "jmap-email",
+        channelKey: "jmap",
         accountId,
         name,
       }),
@@ -175,7 +188,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
     applyAccountConfig: ({ cfg, accountId, input }) => {
       const namedConfig = applyAccountNameToChannelSection({
         cfg,
-        channelKey: "jmap-email",
+        channelKey: "jmap",
         accountId,
         name: input.name,
       });
@@ -193,8 +206,8 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
           ...namedConfig,
           channels: {
             ...namedConfig.channels,
-            "jmap-email": {
-              ...namedConfig.channels?.["jmap-email"],
+            "jmap": {
+              ...namedConfig.channels?.["jmap"],
               enabled: true,
               ...tokenPatch,
             },
@@ -206,13 +219,13 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
         ...namedConfig,
         channels: {
           ...namedConfig.channels,
-          "jmap-email": {
-            ...namedConfig.channels?.["jmap-email"],
+          "jmap": {
+            ...namedConfig.channels?.["jmap"],
             enabled: true,
             accounts: {
-              ...namedConfig.channels?.["jmap-email"]?.accounts,
+              ...namedConfig.channels?.["jmap"]?.accounts,
               [accountId]: {
-                ...namedConfig.channels?.["jmap-email"]?.accounts?.[accountId],
+                ...namedConfig.channels?.["jmap"]?.accounts?.[accountId],
                 enabled: true,
                 ...tokenPatch,
               },
@@ -247,7 +260,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
         threadId,
       });
       return {
-        channel: "jmap-email",
+        channel: "jmap",
         to: result.to,
         messageId: result.messageId,
         threadId: result.threadId,
@@ -263,7 +276,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
         threadId,
       });
       return {
-        channel: "jmap-email",
+        channel: "jmap",
         to: result.to,
         messageId: result.messageId,
         threadId: result.threadId,
@@ -294,6 +307,7 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
       enabled: account.enabled,
       configured: account.configured,
       tokenSource: account.tokenSource,
+      authMode: account.authMode,
       baseUrl: account.sessionUrl,
       mode: `polling:${account.pollIntervalSec}s`,
       running: runtime?.running ?? false,
@@ -302,7 +316,9 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
       lastError: runtime?.lastError ?? null,
       lastInboundAt: runtime?.lastInboundAt ?? null,
       lastOutboundAt: runtime?.lastOutboundAt ?? null,
-      dmPolicy: account.config.dmPolicy ?? "pairing",
+      dmPolicy: account.config.dmPolicy ?? "allowlist",
+      autoReply: account.config.autoReply === true,
+      markAsRead: account.config.markAsRead === true,
     }),
   },
   gateway: {

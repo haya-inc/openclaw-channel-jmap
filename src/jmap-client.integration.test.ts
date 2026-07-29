@@ -187,9 +187,7 @@ describe("JmapClient full chain", () => {
       accountId: mailAccountId,
       update: {
         "mail-1": {
-          keywords: {
-            $seen: true,
-          },
+          "keywords/$seen": true,
         },
       },
     });
@@ -279,6 +277,9 @@ describe("JmapClient full chain", () => {
       to: [{ email: "alice@example.com" }],
       from: [{ email: "bot@example.com", name: "OpenClaw Bot" }],
       mailboxIds: { "mbox-drafts": true },
+      keywords: { $draft: true },
+      "header:Auto-Submitted:asText": "auto-generated",
+      "header:X-Auto-Response-Suppress:asText": "All",
     });
     const bodyValues = createEmail.bodyValues as Record<string, { value?: string }>;
     expect(bodyValues?.["body-1"]?.value).toBe("Hello from OpenClaw");
@@ -290,6 +291,13 @@ describe("JmapClient full chain", () => {
         submitEmail: {
           emailId: "mail-out-1",
           identityId: "identity-1",
+        },
+      },
+      onSuccessUpdateEmail: {
+        "#submitEmail": {
+          "mailboxIds/mbox-drafts": null,
+          "mailboxIds/mbox-sent": true,
+          "keywords/$draft": null,
         },
       },
     });

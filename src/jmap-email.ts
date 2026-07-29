@@ -141,7 +141,24 @@ export function buildThreadContextFromEmail(
   };
 }
 
-export function parseInboundEmail(params: { email: JmapEmail }): {
+function isAutomatedEmail(email: JmapEmail): boolean {
+  const autoSubmitted = (email["header:Auto-Submitted:asText"] ?? "").trim().toLowerCase();
+  if (autoSubmitted && autoSubmitted !== "no") {
+    return true;
+  }
+  const precedence = (email["header:Precedence:asText"] ?? "").trim().toLowerCase();
+  return ["bulk", "junk", "list"].includes(precedence);
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  const source = Buffer.from(value, "utf8");
+  if (source.byteLength <= maxBytes) {
+    return value;
+  }
+  return `${source.subarray(0, maxBytes).toString("utf8")}\n\n[Email body truncated]`;
+}
+
+export function parseInboundEmail(params: { email: JmapEmail; maxBodyBytes?: number }): {
   threadId: string;
   senderEmail: string;
   senderName?: string;
@@ -150,6 +167,9 @@ export function parseInboundEmail(params: { email: JmapEmail }): {
   timestampMs: number;
 } | null {
   const { email } = params;
+  if (isAutomatedEmail(email)) {
+    return null;
+  }
   const threadId = (email.threadId ?? "").trim();
   if (!threadId) {
     return null;
@@ -160,7 +180,8 @@ export function parseInboundEmail(params: { email: JmapEmail }): {
     return null;
   }
 
-  const text = extractTextFromEmail(email).trim();
+  const maxBodyBytes = Math.max(1_000, Math.min(1_000_000, params.maxBodyBytes ?? 100_000));
+  const text = truncateUtf8(extractTextFromEmail(email).trim(), maxBodyBytes);
   if (!text) {
     return null;
   }

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk";
+import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import type { CoreConfig, JmapAccountConfig, JmapResolvedAccount } from "./types.js";
 import { DEFAULT_JMAP_SESSION_URL, DEFAULT_POLL_INTERVAL_SEC } from "./types.js";
 
@@ -26,7 +26,7 @@ function normalizePollInterval(raw?: number): number {
 }
 
 function listConfiguredAccountIds(cfg: CoreConfig): string[] {
-  const accounts = cfg.channels?.["jmap-email"]?.accounts;
+  const accounts = cfg.channels?.["jmap"]?.accounts;
   if (!accounts || typeof accounts !== "object") {
     return [];
   }
@@ -40,7 +40,7 @@ function listConfiguredAccountIds(cfg: CoreConfig): string[] {
 }
 
 function resolveAccountConfig(cfg: CoreConfig, accountId: string): JmapAccountConfig | undefined {
-  const accounts = cfg.channels?.["jmap-email"]?.accounts;
+  const accounts = cfg.channels?.["jmap"]?.accounts;
   if (!accounts || typeof accounts !== "object") {
     return undefined;
   }
@@ -54,7 +54,7 @@ function resolveAccountConfig(cfg: CoreConfig, accountId: string): JmapAccountCo
 }
 
 function mergeJmapAccountConfig(cfg: CoreConfig, accountId: string): JmapAccountConfig {
-  const { accounts: _ignored, ...base } = (cfg.channels?.["jmap-email"] ?? {}) as JmapAccountConfig & {
+  const { accounts: _ignored, ...base } = (cfg.channels?.["jmap"] ?? {}) as JmapAccountConfig & {
     accounts?: unknown;
   };
   const account = resolveAccountConfig(cfg, accountId) ?? {};
@@ -68,46 +68,84 @@ function resolveEnvToken(accountId: string): string {
   return process.env.JMAP_API_TOKEN?.trim() || process.env.JMAIL_API_TOKEN?.trim() || "";
 }
 
-function resolveToken(
+function readCredentialFile(filePath?: string): string {
+  if (!filePath?.trim()) {
+    return "";
+  }
+  try {
+    return readFileSync(filePath.trim(), "utf-8").trim();
+  } catch {
+    return "";
+  }
+}
+
+function resolveCredential(
   cfg: CoreConfig,
   accountId: string,
-): { token: string; source: JmapResolvedAccount["tokenSource"] } {
+): {
+  authMode: JmapResolvedAccount["authMode"];
+  username: string;
+  token: string;
+  source: JmapResolvedAccount["tokenSource"];
+} {
   const merged = mergeJmapAccountConfig(cfg, accountId);
+  const useEnv = accountId === DEFAULT_ACCOUNT_ID;
+  const username = (
+    merged.username ??
+    (useEnv ? process.env.JMAP_USERNAME : undefined) ??
+    ""
+  ).trim();
+  const passwordFromEnv = useEnv ? process.env.JMAP_PASSWORD?.trim() ?? "" : "";
+  const passwordFromFile = readCredentialFile(merged.passwordFile);
+  const password = passwordFromEnv || passwordFromFile || merged.password?.trim() || "";
+  const inferredMode = username || password ? "basic" : "bearer";
+  const authMode = merged.authMode ?? inferredMode;
+
+  if (authMode === "basic") {
+    const source = passwordFromEnv
+      ? "env"
+      : passwordFromFile
+        ? "passwordFile"
+        : password
+          ? "config"
+          : "none";
+    return { authMode, username, token: password, source };
+  }
 
   const envToken = resolveEnvToken(accountId);
   if (envToken) {
-    return { token: envToken, source: "env" };
+    return { authMode, username: "", token: envToken, source: "env" };
   }
 
-  if (merged.apiTokenFile?.trim()) {
-    try {
-      const fileToken = readFileSync(merged.apiTokenFile.trim(), "utf-8").trim();
-      if (fileToken) {
-        return { token: fileToken, source: "tokenFile" };
-      }
-    } catch {
-      // Ignore unreadable file here; status will show unconfigured.
-    }
+  const fileToken = readCredentialFile(merged.apiTokenFile);
+  if (fileToken) {
+    return { authMode, username: "", token: fileToken, source: "tokenFile" };
   }
 
   if (merged.apiToken?.trim()) {
-    return { token: merged.apiToken.trim(), source: "config" };
+    return { authMode, username: "", token: merged.apiToken.trim(), source: "config" };
   }
 
-  return { token: "", source: "none" };
+  return { authMode, username: "", token: "", source: "none" };
 }
 
-function hasTopLevelTokenConfig(cfg: CoreConfig): boolean {
-  const jmap = cfg.channels?.["jmap-email"];
+function hasTopLevelCredentialConfig(cfg: CoreConfig): boolean {
+  const jmap = cfg.channels?.["jmap"];
   if (!jmap) {
     return false;
   }
-  return Boolean(jmap.apiToken?.trim() || jmap.apiTokenFile?.trim());
+  return Boolean(
+    jmap.apiToken?.trim() ||
+      jmap.apiTokenFile?.trim() ||
+      jmap.password?.trim() ||
+      jmap.passwordFile?.trim() ||
+      (process.env.JMAP_USERNAME?.trim() && process.env.JMAP_PASSWORD?.trim()),
+  );
 }
 
 export function listJmapAccountIds(cfg: CoreConfig): string[] {
   const ids = new Set<string>(listConfiguredAccountIds(cfg));
-  if (hasTopLevelTokenConfig(cfg) || resolveEnvToken(DEFAULT_ACCOUNT_ID)) {
+  if (hasTopLevelCredentialConfig(cfg) || resolveEnvToken(DEFAULT_ACCOUNT_ID)) {
     ids.add(DEFAULT_ACCOUNT_ID);
   }
   if (ids.size === 0) {
@@ -129,13 +167,13 @@ export function resolveJmapAccount(params: {
   accountId?: string | null;
 }): JmapResolvedAccount {
   const hasExplicitAccountId = Boolean(params.accountId?.trim());
-  const baseEnabled = params.cfg.channels?.["jmap-email"]?.enabled !== false;
+  const baseEnabled = params.cfg.channels?.["jmap"]?.enabled !== false;
 
   const resolve = (accountId: string): JmapResolvedAccount => {
     const merged = mergeJmapAccountConfig(params.cfg, accountId);
     const accountEnabled = merged.enabled !== false;
     const enabled = baseEnabled && accountEnabled;
-    const tokenResolution = resolveToken(params.cfg, accountId);
+    const credential = resolveCredential(params.cfg, accountId);
     const sessionUrl = normalizeSessionUrl(
       merged.sessionUrl ||
         (accountId === DEFAULT_ACCOUNT_ID ? process.env.JMAP_SESSION_URL : undefined),
@@ -145,10 +183,14 @@ export function resolveJmapAccount(params: {
     return {
       accountId,
       enabled,
-      configured: tokenResolution.source !== "none",
+      configured:
+        credential.source !== "none" &&
+        (credential.authMode === "bearer" || Boolean(credential.username)),
       name: merged.name?.trim() || undefined,
-      token: tokenResolution.token,
-      tokenSource: tokenResolution.source,
+      authMode: credential.authMode,
+      username: credential.username,
+      token: credential.token,
+      tokenSource: credential.source,
       sessionUrl,
       pollIntervalSec,
       config: merged,

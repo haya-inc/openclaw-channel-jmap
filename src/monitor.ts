@@ -1,4 +1,4 @@
-import { sleep } from "openclaw/plugin-sdk";
+import { sleep } from "openclaw/plugin-sdk/runtime-env";
 import type { CoreConfig, JmapResolvedAccount } from "./types.js";
 import { resolveJmapAccount } from "./accounts.js";
 import { handleJmapInbound } from "./inbound.js";
@@ -51,7 +51,7 @@ async function pollLoop(params: {
   const { client, account, config, abortSignal, statusSink } = params;
   const runtimeCore = getJmapRuntime();
   const runtime = getJmapRuntime().logging.getChildLogger({
-    channel: "jmap-email",
+    channel: "jmap",
     accountId: account.accountId,
   });
   const deduper = await createJmapInboundDeduper({
@@ -60,7 +60,7 @@ async function pollLoop(params: {
     logger: runtime,
   });
 
-  const processEmailIds = async (ids: string[], source: "unread-sweep") => {
+  const processEmailIds = async (ids: string[], source: "unread-sweep" | "query-changes") => {
     const unseenIds = deduper.filterUnprocessed(ids);
     if (unseenIds.length === 0) {
       return;
@@ -83,7 +83,10 @@ async function pollLoop(params: {
         continue;
       }
 
-      const inbound = parseInboundEmail({ email });
+      const inbound = parseInboundEmail({
+        email,
+        maxBodyBytes: account.config.maxBodyBytes,
+      });
       if (!inbound) {
         runtime.info(`skip inbound email=${email.id} reason=invalid-content`);
         await deduper.remember(emailId);
@@ -117,17 +120,19 @@ async function pollLoop(params: {
       });
 
       runtimeCore.channel.activity.record({
-        channel: "jmap-email",
+        channel: "jmap",
         accountId: account.accountId,
         direction: "inbound",
         at: inbound.timestampMs,
       });
-      try {
-        await client.markEmailsSeen([email.id]);
-      } catch (error) {
-        runtime.warn(
-          `failed to mark email seen email=${email.id} error=${formatError(error)}`,
-        );
+      if (account.config.markAsRead === true) {
+        try {
+          await client.markEmailsSeen([email.id]);
+        } catch (error) {
+          runtime.warn(
+            `failed to mark email seen email=${email.id} error=${formatError(error)}`,
+          );
+        }
       }
       await deduper.remember(emailId);
       runtime.info(
@@ -168,7 +173,9 @@ async function pollLoop(params: {
 
   let queryState = await client.queryInboxState();
   runtime.info(`poll loop ready queryState=${queryState}`);
-  await runUnreadSweep("startup");
+  if (account.config.processExistingUnread === true) {
+    await runUnreadSweep("startup");
+  }
 
   while (!abortSignal.aborted) {
     try {
@@ -180,7 +187,7 @@ async function pollLoop(params: {
         .filter((entry) => Boolean(entry?.trim()));
 
       if (addedIds.length > 0) {
-        await runUnreadSweep("query-changes");
+        await processEmailIds(addedIds, "query-changes");
       }
 
       statusSink?.({ lastError: null });
@@ -223,11 +230,13 @@ export async function monitorJmapProvider(opts: JmapMonitorOptions): Promise<{ s
   const client = new JmapClient({
     sessionUrl: account.sessionUrl,
     token: account.token,
+    authMode: account.authMode,
+    username: account.username,
   });
   const init = await client.init();
   core.logging
     .getChildLogger({
-      channel: "jmap-email",
+      channel: "jmap",
       accountId: account.accountId,
     })
     .info(
@@ -254,7 +263,7 @@ export async function monitorJmapProvider(opts: JmapMonitorOptions): Promise<{ s
     statusSink: opts.statusSink,
   }).catch((error) => {
     const logger = core.logging.getChildLogger({
-      channel: "jmap-email",
+      channel: "jmap",
       accountId: account.accountId,
     });
     logger.error(`monitor loop exited: ${formatError(error)}`);

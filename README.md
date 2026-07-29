@@ -1,126 +1,163 @@
-# openclaw-channel-jmap-email
+# openclaw-channel-jmap
 
-![cover](./cover-image.png)
+A provider-neutral JMAP email channel and mailbox toolset for OpenClaw.
 
-JMAP email channel plugin for [OpenClaw](https://github.com/openclaw/openclaw). Enables email thread conversations over the [JMAP](https://jmap.io/) protocol.
+It lets an OpenClaw agent receive email as conversations and deliberately
+search, read, inspect, send, reply, mark read/unread, and star/unstar messages.
+It only uses the mailbox-facing JMAP protocol; server administration is outside
+the plugin's scope.
+
+The project is an MIT-licensed fork of
+[kaichen/openclaw-channel-jmap-email](https://github.com/kaichen/openclaw-channel-jmap-email).
+The upstream history and attribution are preserved.
+
+## Why JMAP
+
+JMAP exposes structured mail operations over HTTPS and JSON. One authenticated
+session provides capability discovery, mailbox lookup, search, message bodies,
+threads, state changes, draft creation, and submission. This is a substantially
+cleaner agent boundary than coordinating separate IMAP and SMTP connections.
+
+The implementation is not tied to Stalwart. It is intended for standards-based
+JMAP servers such as:
+
+- Stalwart
+- Fastmail
+- Cyrus IMAP
+- Apache James
+
+Provider differences and test reports are welcome.
 
 ## Features
 
-- JMAP email send/receive
-- Email thread session management
-- Inbound message deduplication
-- Mailbox monitoring with configurable poll interval
+- OpenClaw `jmap` channel with direct and thread conversations
+- Multiple JMAP accounts
+- Basic authentication for account/app passwords
+- Bearer authentication for JMAP API tokens
+- Standard environment-variable and credential-file sources
+- Polling through `Email/queryChanges`
+- Persistent inbound deduplication
+- Plain-text thread-aware sending through `Email/set` and
+  `EmailSubmission/set`
+- Sender policy through OpenClaw's `disabled`, `allowlist`, `pairing`, and
+  `open` direct-message policies
+- Agent tools:
+  - `jmap_mail_search`
+  - `jmap_mail_get`
+  - `jmap_mail_thread`
+  - `jmap_mail_send`
+  - `jmap_mail_update`
 
-## Prerequisites
+## Safe defaults
 
-This plugin defaults to [Fastmail](https://www.fastmail.com/) as the JMAP provider. You need a Fastmail API token to get started.
+Email is an untrusted public input surface. The defaults therefore:
 
-### Obtaining a Fastmail API Token
+- do not send an automatic model reply (`autoReply: false`);
+- do not mark inbound messages read (`markAsRead: false`);
+- do not process the existing unread backlog at startup
+  (`processExistingUnread: false`);
+- use `allowlist` sender policy;
+- ignore common automated responses and bulk/list messages;
+- cap the body exposed to the agent at 100 KB;
+- do not fetch attachments.
 
-1. Log in to your Fastmail account
-2. Go to **Settings → Privacy & Security → Integrations → API tokens** (or visit [API tokens page](https://app.fastmail.com/settings/security/tokens) directly)
-3. Click **New API token**
-4. Grant at minimum the **Mail** scope (`urn:ietf:params:jmap:mail`)
-5. Copy the generated token
-
-> Using a different JMAP provider? Set `sessionUrl` in the config to point to your provider's JMAP session endpoint.
+Each behavior can be enabled explicitly per account.
 
 ## Install
 
-Via Git repository:
+Install from GitHub:
 
 ```bash
-openclaw plugins install https://github.com/kaichen/openclaw-channel-jmap-email.git
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 ```
 
-Or from local source:
+For a reproducible deployment, pin a release tag or commit:
 
 ```bash
-git clone https://github.com/kaichen/openclaw-channel-jmap-email.git
-cd openclaw-channel-jmap-email && npm install
-openclaw plugins install -l .
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.1.0
 ```
 
-## Configuration
+Restart the OpenClaw gateway after changing the plugin or channel
+configuration.
 
-Register as an OpenClaw channel plugin — see [OpenClaw channel docs](/channels/jmap-email) for setup details.
+## Configure
 
-### API Token
+### Stalwart or another Basic-auth JMAP server
 
-Provide your JMAP API token via one of the following methods (in priority order):
+Keep credentials out of `openclaw.json`:
 
-| Method | Description |
-|--------|-------------|
-| Environment variable | Set `JMAP_API_TOKEN` (or `JMAIL_API_TOKEN`) |
-| Token file | Set `apiTokenFile` in config to a file path containing the token |
-| Config field | Set `apiToken` directly in the channel config |
+```bash
+export JMAP_SESSION_URL=https://mail.example.com/.well-known/jmap
+export JMAP_USERNAME=agent@example.com
+export JMAP_PASSWORD='an-app-password'
+```
 
-### Options
-
-**Connection**
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `enabled` | `boolean` | `true` | Enable/disable this channel or account |
-| `name` | `string` | — | Display name for the account |
-| `apiToken` | `string` | — | JMAP API token |
-| `apiTokenFile` | `string` | — | Path to a file containing the API token |
-| `sessionUrl` | `string` | `"https://api.fastmail.com/jmap/session"` | JMAP session endpoint URL |
-| `pollIntervalSec` | `number` | `20` | Mailbox poll interval in seconds (5–300) |
-
-**Access Control**
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `dmPolicy` | `string` | `"pairing"` | DM policy: `"pairing"`, `"allowlist"`, `"open"`, or `"disabled"` |
-| `allowFrom` | `string[]` | — | Allowed sender emails. Must include `"*"` when dmPolicy is `"open"` |
-| `groupPolicy` | `string` | `"allowlist"` | Group conversation policy: `"allowlist"`, `"open"`, or `"disabled"` |
-| `groupAllowFrom` | `string[]` | — | Allowed group sender addresses |
-
-**Message Handling**
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `historyLimit` | `number` | — | Max conversation history messages to load |
-| `dmHistoryLimit` | `number` | — | Max DM history messages to load |
-| `dms` | `object` | — | Per-DM overrides keyed by email, e.g. `{ "alice@x.com": { "historyLimit": 5 } }` |
-| `responsePrefix` | `string` | — | Prefix prepended to every outgoing reply |
-| `blockStreaming` | `boolean` | `true` | Buffer response into blocks before sending (vs character-level streaming) |
-| `textChunkLimit` | `number` | `4000` | Max characters per outgoing message chunk |
-| `chunkMode` | `string` | — | Chunk splitting strategy: `"length"` or `"newline"` |
-
-### Example Config
+Then configure the channel:
 
 ```json
 {
   "channels": {
-    "jmap-email": {
-      "apiToken": "fmu1-...",
-      "pollIntervalSec": 30,
-      "dmPolicy": "pairing",
-      "allowFrom": ["alice@example.com", "bob@example.com"]
+    "jmap": {
+      "enabled": true,
+      "dmPolicy": "allowlist",
+      "allowFrom": ["owner@example.com"],
+      "autoReply": false,
+      "markAsRead": false,
+      "processExistingUnread": false
     }
   }
 }
 ```
 
-### Multi-Account
+The same values may be expressed with `sessionUrl`, `username`, `password`, and
+`authMode: "basic"` in channel configuration, or with `passwordFile`. Environment
+variables or a root-readable credential file are recommended.
+
+### Bearer-token JMAP server
+
+```bash
+export JMAP_SESSION_URL=https://api.fastmail.com/jmap/session
+export JMAP_API_TOKEN='your-token'
+```
 
 ```json
 {
   "channels": {
-    "jmap-email": {
-      "dmPolicy": "pairing",
+    "jmap": {
+      "enabled": true,
+      "authMode": "bearer",
+      "dmPolicy": "allowlist",
+      "allowFrom": ["owner@example.com"]
+    }
+  }
+}
+```
+
+`JMAIL_API_TOKEN` remains accepted as a compatibility alias.
+
+### Multiple accounts
+
+Top-level settings are inherited by named accounts:
+
+```json
+{
+  "channels": {
+    "jmap": {
+      "sessionUrl": "https://mail.example.com/.well-known/jmap",
+      "dmPolicy": "allowlist",
+      "autoReply": false,
       "accounts": {
-        "work": {
-          "apiToken": "fmu1-...",
-          "sessionUrl": "https://api.fastmail.com/jmap/session",
-          "allowFrom": ["*"],
-          "dmPolicy": "open"
+        "support": {
+          "authMode": "basic",
+          "username": "support@example.com",
+          "passwordFile": "/run/secrets/jmap-support",
+          "allowFrom": ["customer@example.net"]
         },
-        "personal": {
-          "apiToken": "fmu1-...",
-          "allowFrom": ["alice@example.com"]
+        "ops": {
+          "authMode": "basic",
+          "username": "ops@example.com",
+          "passwordFile": "/run/secrets/jmap-ops",
+          "allowFrom": ["oncall@example.com"]
         }
       }
     }
@@ -128,13 +165,55 @@ Provide your JMAP API token via one of the following methods (in priority order)
 }
 ```
 
+## Main options
+
+| Option | Default | Meaning |
+|---|---:|---|
+| `sessionUrl` | Fastmail session URL | JMAP session discovery URL |
+| `authMode` | inferred | `basic` or `bearer` |
+| `pollIntervalSec` | `20` | Polling interval, 5–300 seconds |
+| `dmPolicy` | `allowlist` | Sender access policy |
+| `allowFrom` | `[]` | Allowed sender addresses; `open` requires `["*"]` |
+| `autoReply` | `false` | Send the model response back to the email thread |
+| `markAsRead` | `false` | Mark successfully handled inbound mail read |
+| `processExistingUnread` | `false` | Process unread mail already present at startup |
+| `maxBodyBytes` | `100000` | Maximum body bytes exposed per email |
+
+If `sessionUrl` is omitted, the compatibility default is Fastmail. Non-Fastmail
+deployments should always set it explicitly.
+
+## JMAP operations used
+
+The plugin requires the JMAP Core, Mail, and Submission capabilities and uses:
+
+- `Mailbox/get`
+- `Identity/get`
+- `Email/query` and `Email/queryChanges`
+- `Email/get` and `Email/set`
+- `Thread/get`
+- `EmailSubmission/set`
+
+It does not need a Stalwart management token or server-admin permission.
+
+## Delivery semantics
+
+Inbound IDs are recorded in an atomic local state file after a turn finishes.
+Restarts therefore avoid normal duplicate delivery. A crash after an external
+side effect but before the state file is committed can still cause at-least-once
+redelivery. Agents should make consequential workflows idempotent.
+
 ## Development
 
+Requires Node.js 24 or newer:
+
 ```bash
-pnpm install
-pnpm test
+npm install
+npm run check
 ```
+
+The test suite includes mocked full JMAP request chains, authentication,
+threaded sending, polling, and restart deduplication.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

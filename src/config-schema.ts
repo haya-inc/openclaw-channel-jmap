@@ -4,18 +4,26 @@ import {
   DmPolicySchema,
   GroupPolicySchema,
   requireOpenAllowFrom,
-} from "openclaw/plugin-sdk";
+} from "openclaw/plugin-sdk/channel-config-schema";
 import { z } from "zod";
 
 export const JmapAccountSchemaBase = z
   .object({
     name: z.string().optional(),
     enabled: z.boolean().optional(),
+    authMode: z.enum(["bearer", "basic"]).optional(),
+    username: z.string().optional(),
+    password: z.string().optional(),
+    passwordFile: z.string().optional(),
     apiToken: z.string().optional(),
     apiTokenFile: z.string().optional(),
     sessionUrl: z.string().url().optional(),
     pollIntervalSec: z.number().int().min(5).max(300).optional(),
-    dmPolicy: DmPolicySchema.optional().default("pairing"),
+    autoReply: z.boolean().optional().default(false),
+    markAsRead: z.boolean().optional().default(false),
+    processExistingUnread: z.boolean().optional().default(false),
+    maxBodyBytes: z.number().int().min(1_000).max(1_000_000).optional(),
+    dmPolicy: DmPolicySchema.optional().default("allowlist"),
     allowFrom: z.array(z.string()).optional(),
     groupPolicy: GroupPolicySchema.optional().default("allowlist"),
     groupAllowFrom: z.array(z.string()).optional(),
@@ -36,7 +44,7 @@ export const JmapAccountSchema = JmapAccountSchemaBase.superRefine((value, ctx) 
     allowFrom: value.allowFrom,
     ctx,
     path: ["allowFrom"],
-    message: 'channels.jmap-email.dmPolicy="open" requires channels.jmap-email.allowFrom to include "*"',
+    message: 'channels.jmap.dmPolicy="open" requires channels.jmap.allowFrom to include "*"',
   });
 });
 
@@ -48,6 +56,6 @@ export const JmapConfigSchema = JmapAccountSchemaBase.extend({
     allowFrom: value.allowFrom,
     ctx,
     path: ["allowFrom"],
-    message: 'channels.jmap-email.dmPolicy="open" requires channels.jmap-email.allowFrom to include "*"',
+    message: 'channels.jmap.dmPolicy="open" requires channels.jmap.allowFrom to include "*"',
   });
 });

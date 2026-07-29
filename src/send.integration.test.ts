@@ -120,7 +120,7 @@ describe("sendJmapByTarget chain", () => {
       to: "alice@example.com",
     });
     expect(activityRecord).toHaveBeenCalledWith({
-      channel: "jmap-email",
+      channel: "jmap",
       accountId: "acc-mail",
       direction: "outbound",
     });

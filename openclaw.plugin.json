@@ -1,6 +1,39 @@
 {
-  "id": "jmap-email",
-  "channels": ["jmap-email"],
+  "id": "jmap",
+  "name": "JMAP Email",
+  "description": "Provider-neutral JMAP email channel and mailbox tools.",
+  "activation": {
+    "onStartup": false
+  },
+  "channels": ["jmap"],
+  "channelConfigs": {
+    "jmap": {
+      "label": "JMAP Email",
+      "description": "Receive, search, read, and send email through a JMAP account.",
+      "schema": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "channelEnvVars": {
+    "jmap": [
+      "JMAP_SESSION_URL",
+      "JMAP_USERNAME",
+      "JMAP_PASSWORD",
+      "JMAP_API_TOKEN",
+      "JMAIL_API_TOKEN"
+    ]
+  },
+  "contracts": {
+    "tools": [
+      "jmap_mail_search",
+      "jmap_mail_get",
+      "jmap_mail_thread",
+      "jmap_mail_send",
+      "jmap_mail_update"
+    ]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

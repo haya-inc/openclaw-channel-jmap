@@ -1,17 +1,17 @@
 import {
-  createReplyPrefixOptions,
   formatPairingApproveHint,
-  logInboundDrop,
-  PAIRING_APPROVED_MESSAGE,
-  resolveControlCommandGate,
-  type OpenClawConfig,
-} from "openclaw/plugin-sdk";
+} from "openclaw/plugin-sdk/channel-plugin-common";
+import { logInboundDrop } from "openclaw/plugin-sdk/channel-inbound";
+import { createReplyPrefixOptions } from "openclaw/plugin-sdk/channel-reply-pipeline";
+import { PAIRING_APPROVED_MESSAGE } from "openclaw/plugin-sdk/channel-status";
+import { resolveControlCommandGate } from "openclaw/plugin-sdk/command-gating";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { CoreConfig, JmapInboundMessage, JmapResolvedAccount } from "./types.js";
 import { getJmapRuntime } from "./runtime.js";
 import { sendJmapReplyToThread } from "./send.js";
 import { resolveThreadSession } from "./thread-session.js";
 
-const CHANNEL_ID = "jmap-email" as const;
+const CHANNEL_ID = "jmap" as const;
 
 function normalizeAllowFrom(entries?: string[]): string[] {
   return (entries ?? []).map((entry) => entry.trim().toLowerCase()).filter(Boolean);
@@ -48,7 +48,7 @@ export async function handleJmapInbound(params: {
 
   statusSink?.({ lastInboundAt: message.receivedAt });
 
-  const dmPolicy = account.config.dmPolicy ?? "pairing";
+  const dmPolicy = account.config.dmPolicy ?? "allowlist";
   const configAllowFrom = normalizeAllowFrom(account.config.allowFrom);
   const shouldComputeCommandAuth = core.channel.commands.shouldComputeCommandAuthorized(
     rawBody,
@@ -56,7 +56,12 @@ export async function handleJmapInbound(params: {
   );
   const storeAllowFrom =
     dmPolicy !== "open" || shouldComputeCommandAuth
-      ? await core.channel.pairing.readAllowFromStore(CHANNEL_ID).catch(() => [])
+      ? await core.channel.pairing
+          .readAllowFromStore({
+            channel: CHANNEL_ID,
+            accountId: account.accountId,
+          })
+          .catch(() => [])
       : [];
   const effectiveAllowFrom = normalizeAllowFrom([
     ...configAllowFrom,
@@ -91,6 +96,7 @@ export async function handleJmapInbound(params: {
     if (dmPolicy === "pairing") {
       const { code, created } = await core.channel.pairing.upsertPairingRequest({
         channel: CHANNEL_ID,
+        accountId: account.accountId,
         id: message.senderEmail,
         meta: {
           name: message.senderName,
@@ -214,6 +220,12 @@ export async function handleJmapInbound(params: {
     dispatcherOptions: {
       ...prefixOptions,
       deliver: async (payload) => {
+        if (account.config.autoReply !== true) {
+          runtime.info(
+            `reply suppressed thread=${message.threadId} sender=${message.senderEmail} (autoReply=false)`,
+          );
+          return;
+        }
         await sendJmapReplyToThread({
           accountId: account.accountId,
           threadId: message.threadId,

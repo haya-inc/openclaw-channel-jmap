@@ -40,7 +40,7 @@ function normalizeEmailId(raw?: string | null): string {
 function resolveJmapInboundDedupePath(accountId?: string | null): string {
   const stateDir = getJmapRuntime().state.resolveStateDir(process.env, os.homedir);
   const normalized = normalizeAccountId(accountId);
-  return path.join(stateDir, "jmap-email", `inbound-dedupe-${normalized}.json`);
+  return path.join(stateDir, "jmap", `inbound-dedupe-${normalized}.json`);
 }
 
 function parseState(raw: string): JmapInboundDedupeState | null {

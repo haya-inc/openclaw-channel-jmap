@@ -3,7 +3,7 @@ import type {
   DmConfig,
   DmPolicy,
   GroupPolicy,
-} from "openclaw/plugin-sdk";
+} from "openclaw/plugin-sdk/config-contracts";
 
 export type { DmPolicy, GroupPolicy };
 
@@ -13,14 +13,25 @@ export const JMAP_SUBMISSION = "urn:ietf:params:jmap:submission" as const;
 
 export const DEFAULT_JMAP_SESSION_URL = "https://api.fastmail.com/jmap/session";
 export const DEFAULT_POLL_INTERVAL_SEC = 20;
+export const DEFAULT_MAX_BODY_BYTES = 100_000;
+
+export type JmapAuthMode = "bearer" | "basic";
 
 export type JmapAccountConfig = {
   name?: string;
   enabled?: boolean;
+  authMode?: JmapAuthMode;
+  username?: string;
+  password?: string;
+  passwordFile?: string;
   apiToken?: string;
   apiTokenFile?: string;
   sessionUrl?: string;
   pollIntervalSec?: number;
+  autoReply?: boolean;
+  markAsRead?: boolean;
+  processExistingUnread?: boolean;
+  maxBodyBytes?: number;
   dmPolicy?: DmPolicy;
   allowFrom?: string[];
   groupPolicy?: GroupPolicy;
@@ -41,7 +52,7 @@ export type JmapConfig = {
 
 export type CoreConfig = {
   channels?: {
-    "jmap-email"?: JmapConfig;
+    "jmap"?: JmapConfig;
   };
   commands?: {
     useAccessGroups?: boolean;
@@ -57,8 +68,10 @@ export type JmapResolvedAccount = {
   enabled: boolean;
   configured: boolean;
   name?: string;
+  authMode: JmapAuthMode;
+  username: string;
   token: string;
-  tokenSource: "env" | "tokenFile" | "config" | "none";
+  tokenSource: "env" | "passwordFile" | "tokenFile" | "config" | "none";
   sessionUrl: string;
   pollIntervalSec: number;
   config: JmapAccountConfig;
@@ -106,6 +119,11 @@ export type JmapEmail = {
   bodyValues?: Record<string, JmapBodyValue>;
   textBody?: JmapBodyPartRef[];
   htmlBody?: JmapBodyPartRef[];
+  keywords?: Record<string, boolean>;
+  size?: number;
+  "header:Auto-Submitted:asText"?: string;
+  "header:Precedence:asText"?: string;
+  "header:List-Id:asText"?: string;
 };
 
 export type JmapIdentity = {
@@ -157,4 +175,15 @@ export type JmapQueryChangesResult = {
 export type JmapSendResult = {
   messageId: string;
   threadId?: string;
+};
+
+export type JmapSearchParams = {
+  text?: string;
+  from?: string;
+  to?: string;
+  subject?: string;
+  after?: string;
+  before?: string;
+  unread?: boolean;
+  limit?: number;
 };
