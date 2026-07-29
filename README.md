@@ -57,7 +57,8 @@ Email is an untrusted public input surface. The defaults therefore:
 - do not process the existing unread backlog at startup
   (`processExistingUnread: false`);
 - use `allowlist` sender policy;
-- ignore common automated responses and bulk/list messages;
+- label automated and bulk/list messages as untrusted and never auto-reply to
+  them, while still delivering them for OTP and verification inspection;
 - cap the body exposed to the agent at 100 KB;
 - do not fetch attachments.
 

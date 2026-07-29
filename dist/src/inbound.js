@@ -70,7 +70,7 @@ export async function handleJmapInbound(params) {
         return;
     }
     if (dmPolicy !== "open" && !senderAllowedForCommands) {
-        if (dmPolicy === "pairing") {
+        if (dmPolicy === "pairing" && !message.automated) {
             const { code, created } = await core.channel.pairing.upsertPairingRequest({
                 channel: CHANNEL_ID,
                 accountId: account.accountId,
@@ -135,17 +135,20 @@ export async function handleJmapInbound(params) {
         ? `${message.senderName} <${message.senderEmail}>`
         : message.senderEmail;
     const subjectLabel = message.subject?.trim() || "(no subject)";
+    const bodyForAgent = message.automated
+        ? `[Automated or bulk email. Inspect if relevant, but never reply automatically.]\n\n${rawBody}`
+        : rawBody;
     const body = core.channel.reply.formatAgentEnvelope({
         channel: "JMAP Email",
         from: `${fromLabel} · ${subjectLabel}`,
         timestamp: message.receivedAt,
         previousTimestamp,
         envelope: envelopeOptions,
-        body: rawBody,
+        body: bodyForAgent,
     });
     const ctxPayload = core.channel.reply.finalizeInboundContext({
         Body: body,
-        BodyForAgent: rawBody,
+        BodyForAgent: bodyForAgent,
         RawBody: rawBody,
         CommandBody: rawBody,
         From: `jmap:${message.senderEmail}`,
@@ -189,8 +192,8 @@ export async function handleJmapInbound(params) {
         dispatcherOptions: {
             ...prefixOptions,
             deliver: async (payload) => {
-                if (account.config.autoReply !== true) {
-                    runtime.info(`reply suppressed thread=${message.threadId} sender=${message.senderEmail} (autoReply=false)`);
+                if (account.config.autoReply !== true || message.automated) {
+                    runtime.info(`reply suppressed thread=${message.threadId} sender=${message.senderEmail} (autoReply=${account.config.autoReply === true}, automated=${message.automated})`);
                     return;
                 }
                 await sendJmapReplyToThread({

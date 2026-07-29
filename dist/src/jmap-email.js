@@ -118,13 +118,14 @@ export function buildThreadContextFromEmail(accountId, email) {
         references,
     };
 }
-function isAutomatedEmail(email) {
+export function isAutomatedEmail(email) {
     const autoSubmitted = (email["header:Auto-Submitted:asText"] ?? "").trim().toLowerCase();
     if (autoSubmitted && autoSubmitted !== "no") {
         return true;
     }
     const precedence = (email["header:Precedence:asText"] ?? "").trim().toLowerCase();
-    return ["bulk", "junk", "list"].includes(precedence);
+    return (["bulk", "junk", "list"].includes(precedence) ||
+        Boolean((email["header:List-Id:asText"] ?? "").trim()));
 }
 function truncateUtf8(value, maxBytes) {
     const source = Buffer.from(value, "utf8");
@@ -135,9 +136,6 @@ function truncateUtf8(value, maxBytes) {
 }
 export function parseInboundEmail(params) {
     const { email } = params;
-    if (isAutomatedEmail(email)) {
-        return null;
-    }
     const threadId = (email.threadId ?? "").trim();
     if (!threadId) {
         return null;
@@ -159,6 +157,7 @@ export function parseInboundEmail(params) {
         text,
         subject: email.subject?.trim() || undefined,
         timestampMs: parseTimestampMs(email),
+        automated: isAutomatedEmail(email),
     };
 }
 //# sourceMappingURL=jmap-email.js.map

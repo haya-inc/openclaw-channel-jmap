@@ -82,6 +82,7 @@ async function pollLoop(params) {
                     subject: inbound.subject,
                     text: inbound.text,
                     receivedAt: inbound.timestampMs,
+                    automated: inbound.automated,
                     email,
                 },
                 account,

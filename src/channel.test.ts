@@ -20,7 +20,7 @@ describe("parseInboundEmail", () => {
     expect(parsed?.text).toBe("Preview text");
   });
 
-  it("rejects automated response email as an inbound agent turn", () => {
+  it("labels automated email for inspection while suppressing replies elsewhere", () => {
     const parsed = parseInboundEmail({
       email: {
         id: "m2",
@@ -31,6 +31,9 @@ describe("parseInboundEmail", () => {
       },
     });
 
-    expect(parsed).toBeNull();
+    expect(parsed).toMatchObject({
+      senderEmail: "mailer-daemon@example.com",
+      automated: true,
+    });
   });
 });

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Deliver automated and bulk messages for OTP/verification inspection while
+  hard-suppressing pairing and automatic replies to them.
+
 ## 0.1.1
 
 - Include verified build output in Git so OpenClaw's script-disabled Git

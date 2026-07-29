@@ -156,6 +156,7 @@ export type JmapInboundMessage = {
   subject?: string;
   text: string;
   receivedAt: number;
+  automated: boolean;
   email: JmapEmail;
 };
 
