@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-29T11:41:49.710Z",
+  "verificationLevel": "lab",
+  "target": {
+    "serverProfile": "cyrus",
+    "serverVersion": "3.13.6",
+    "artifact": "cyrus-imapd@248be58c89fc7f841e5117a4269c8e05ac9a93ea built with cyrusimap/cyrus-docker@sha256:2230f54eff887845d81a51e9c35362b66d6e5c6cbcc2825f84d44678a5871a3d"
+  },
+  "probe": {
+    "packageVersion": "0.3.0",
+    "sourceRevision": "490a743aaba7b8921ecbd0dd2415a7a19954adae",
+    "reportSha256": "683f46d9a2e70af0637d0d592664132de2f19581e239f0b24075c96731ad81e4"
+  },
+  "report": {
+    "schemaVersion": 1,
+    "generatedAt": "2026-07-29T11:40:34.068Z",
+    "serverProfile": "cyrus",
+    "serverLabel": "Cyrus IMAP",
+    "scope": "full",
+    "accountId": "default",
+    "authMode": "basic",
+    "verdict": "compatible",
+    "advertisedCapabilities": [
+      "https://cyrusimap.org/ns/jmap/admin",
+      "https://cyrusimap.org/ns/jmap/core",
+      "urn:ietf:params:jmap:blob",
+      "urn:ietf:params:jmap:calendars",
+      "urn:ietf:params:jmap:calendars:preferences",
+      "urn:ietf:params:jmap:contacts",
+      "urn:ietf:params:jmap:core",
+      "urn:ietf:params:jmap:core:backendInfo",
+      "urn:ietf:params:jmap:mail",
+      "urn:ietf:params:jmap:mdn",
+      "urn:ietf:params:jmap:principals",
+      "urn:ietf:params:jmap:quota",
+      "urn:ietf:params:jmap:sieve",
+      "urn:ietf:params:jmap:submission",
+      "urn:ietf:params:jmap:vacationresponse",
+      "urn:ietf:params:jmap:websocket"
+    ],
+    "checks": [
+      {
+        "id": "configuration",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "configured"
+      },
+      {
+        "id": "session-discovery",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "session-and-mailbox-ready",
+        "durationMs": 245
+      },
+      {
+        "id": "mailbox-get",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "method-succeeded"
+      },
+      {
+        "id": "core-capability",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "capability-advertised"
+      },
+      {
+        "id": "mail-capability",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "capability-advertised"
+      },
+      {
+        "id": "mailbox-rights",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "management-rights-advertised"
+      },
+      {
+        "id": "email-query",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "method-succeeded",
+        "durationMs": 5
+      },
+      {
+        "id": "email-query-changes",
+        "status": "pass",
+        "required": false,
+        "evidence": "invoked",
+        "code": "method-succeeded",
+        "durationMs": 4
+      },
+      {
+        "id": "receive-polling",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "poll-strategy-verified"
+      },
+      {
+        "id": "email-metadata",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "email-get-succeeded",
+        "durationMs": 15
+      },
+      {
+        "id": "thread-get",
+        "status": "pass",
+        "required": false,
+        "evidence": "invoked",
+        "code": "method-succeeded"
+      },
+      {
+        "id": "submission-capability",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "capability-advertised"
+      },
+      {
+        "id": "identity-get",
+        "status": "pass",
+        "required": true,
+        "evidence": "invoked",
+        "code": "identity-available"
+      },
+      {
+        "id": "download-url",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "template-advertised"
+      },
+      {
+        "id": "upload-url",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "template-advertised"
+      },
+      {
+        "id": "event-source-url",
+        "status": "pass",
+        "required": true,
+        "evidence": "advertised",
+        "code": "template-advertised"
+      }
+    ],
+    "features": {
+      "receivePolling": "verified",
+      "search": "verified",
+      "read": "verified",
+      "thread": "verified",
+      "update": "advertised",
+      "send": "advertised",
+      "push": "advertised",
+      "attachmentDownload": "advertised",
+      "attachmentUpload": "advertised"
+    },
+    "probePolicy": {
+      "sideEffectsPerformed": false,
+      "messageBodiesRead": false,
+      "messageIdentifiersExposed": false,
+      "outboundDeliveryVerified": false
+    },
+    "limitations": [
+      "The safe probe never sends mail or mutates mailbox state.",
+      "A passing send check verifies advertised Submission support and an Identity, not delivery."
+    ]
+  }
+}
