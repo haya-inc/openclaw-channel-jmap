@@ -308,6 +308,13 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
       const activity = runtime as
         | (typeof runtime & Partial<JmapRuntimeStatus>)
         | undefined;
+      const observed = getJmapRuntimeStatus(account.accountId);
+      const latest = (left: number | null, right?: number | null): number | null =>
+        Math.max(left ?? 0, right ?? 0) || null;
+      const runtimeToolAt = activity?.lastToolCallAt ?? null;
+      const useRuntimeTool =
+        runtimeToolAt !== null &&
+        (observed.lastToolCallAt === null || runtimeToolAt > observed.lastToolCallAt);
       return {
         accountId: account.accountId,
         name: account.name,
@@ -321,24 +328,40 @@ export const jmapPlugin: ChannelPlugin<JmapResolvedAccount> = {
         lastStartAt: activity?.lastStartAt ?? null,
         lastStopAt: activity?.lastStopAt ?? null,
         lastError: activity?.lastError ?? null,
-        lastInboundAt: activity?.lastInboundAt ?? null,
-        lastOutboundAt: activity?.lastOutboundAt ?? null,
-        lastPollAt: activity?.lastPollAt ?? null,
-        lastSuccessfulPollAt: activity?.lastSuccessfulPollAt ?? null,
-        lastPollErrorAt: activity?.lastPollErrorAt ?? null,
-        pollCount: activity?.pollCount ?? 0,
-        pollErrorCount: activity?.pollErrorCount ?? 0,
-        lastInboundMessageAt: activity?.lastInboundMessageAt ?? null,
-        lastInboundLatencyMs: activity?.lastInboundLatencyMs ?? null,
-        inboundCount: activity?.inboundCount ?? 0,
-        outboundCount: activity?.outboundCount ?? 0,
-        lastToolCallAt: activity?.lastToolCallAt ?? null,
-        lastToolSucceededAt: activity?.lastToolSucceededAt ?? null,
-        lastToolErrorAt: activity?.lastToolErrorAt ?? null,
-        lastToolName: activity?.lastToolName ?? null,
-        lastToolDurationMs: activity?.lastToolDurationMs ?? null,
-        toolCallCount: activity?.toolCallCount ?? 0,
-        toolErrorCount: activity?.toolErrorCount ?? 0,
+        lastInboundAt: latest(observed.lastInboundAt, activity?.lastInboundAt),
+        lastOutboundAt: latest(observed.lastOutboundAt, activity?.lastOutboundAt),
+        lastPollAt: latest(observed.lastPollAt, activity?.lastPollAt),
+        lastSuccessfulPollAt: latest(
+          observed.lastSuccessfulPollAt,
+          activity?.lastSuccessfulPollAt,
+        ),
+        lastPollErrorAt: latest(observed.lastPollErrorAt, activity?.lastPollErrorAt),
+        pollCount: Math.max(observed.pollCount, activity?.pollCount ?? 0),
+        pollErrorCount: Math.max(observed.pollErrorCount, activity?.pollErrorCount ?? 0),
+        lastInboundMessageAt: latest(
+          observed.lastInboundMessageAt,
+          activity?.lastInboundMessageAt,
+        ),
+        lastInboundLatencyMs:
+          latest(observed.lastInboundAt, activity?.lastInboundAt) === activity?.lastInboundAt
+            ? (activity?.lastInboundLatencyMs ?? observed.lastInboundLatencyMs)
+            : observed.lastInboundLatencyMs,
+        inboundCount: Math.max(observed.inboundCount, activity?.inboundCount ?? 0),
+        outboundCount: Math.max(observed.outboundCount, activity?.outboundCount ?? 0),
+        lastToolCallAt: latest(observed.lastToolCallAt, runtimeToolAt),
+        lastToolSucceededAt: latest(
+          observed.lastToolSucceededAt,
+          activity?.lastToolSucceededAt,
+        ),
+        lastToolErrorAt: latest(observed.lastToolErrorAt, activity?.lastToolErrorAt),
+        lastToolName: useRuntimeTool
+          ? (activity?.lastToolName ?? null)
+          : observed.lastToolName,
+        lastToolDurationMs: useRuntimeTool
+          ? (activity?.lastToolDurationMs ?? null)
+          : observed.lastToolDurationMs,
+        toolCallCount: Math.max(observed.toolCallCount, activity?.toolCallCount ?? 0),
+        toolErrorCount: Math.max(observed.toolErrorCount, activity?.toolErrorCount ?? 0),
         dmPolicy: account.config.dmPolicy ?? "allowlist",
         dispatchInbound: account.config.dispatchInbound !== false,
         autoReply: account.config.autoReply === true,

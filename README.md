@@ -77,7 +77,7 @@ openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 For a reproducible deployment, pin a release tag or commit:
 
 ```bash
-openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.1.4
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.1.5
 ```
 
 Restart the OpenClaw gateway after changing the plugin or channel
@@ -215,6 +215,9 @@ without logging message bodies or tool arguments:
 
 Tool logs contain only the tool name, outcome, duration, and error type. They do
 not contain search terms, addresses, subjects, message IDs, or message bodies.
+The same anonymous tool/outbound events are appended under OpenClaw's state
+directory so `openclaw agent --local` tool calls remain visible to the gateway
+status process.
 
 With `dispatchInbound: false`, new mail is still detected and deduplicated, but
 it does not start an agent turn. The agent can inspect it later with

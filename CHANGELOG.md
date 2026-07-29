@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Persist anonymous tool and outbound activity in append-only shared OpenClaw
+  state so gateway status includes calls made by separate `openclaw agent
+  --local` processes.
+
 ## 0.1.4
 
 - Add lossless per-account runtime status for polling, inbound/outbound mail,

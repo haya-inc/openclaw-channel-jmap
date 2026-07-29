@@ -1,4 +1,8 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setJmapRuntime } from "./runtime.js";
 import {
   bindJmapStatusSink,
   getJmapRuntimeStatus,
@@ -12,8 +16,14 @@ import {
   resetJmapRuntimeStatusForTests,
 } from "./status.js";
 
-afterEach(() => {
+let stateDir: string | null = null;
+
+afterEach(async () => {
   resetJmapRuntimeStatusForTests();
+  if (stateDir) {
+    await fs.rm(stateDir, { recursive: true, force: true });
+    stateDir = null;
+  }
 });
 
 describe("JMAP runtime status", () => {
@@ -70,6 +80,34 @@ describe("JMAP runtime status", () => {
       lastToolDurationMs: 25,
       toolCallCount: 1,
       toolErrorCount: 1,
+    });
+  });
+
+  it("retains anonymous tool and outbound telemetry across plugin processes", async () => {
+    stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-jmap-status-"));
+    setJmapRuntime({
+      state: {
+        resolveStateDir: () => stateDir!,
+      },
+    } as never);
+
+    recordJmapToolStarted("default", "jmap_mail_search", 3_000);
+    recordJmapToolSucceeded("default", "jmap_mail_search", 3_000, 3_040);
+    recordJmapOutbound("default", 3_100);
+
+    // A separate `openclaw agent --local` process has independent memory. The
+    // gateway must still recover the anonymous counters from shared state.
+    resetJmapRuntimeStatusForTests();
+
+    expect(getJmapRuntimeStatus("default")).toMatchObject({
+      lastOutboundAt: 3_100,
+      outboundCount: 1,
+      lastToolCallAt: 3_000,
+      lastToolSucceededAt: 3_040,
+      lastToolName: "jmap_mail_search",
+      lastToolDurationMs: 40,
+      toolCallCount: 1,
+      toolErrorCount: 0,
     });
   });
 });
