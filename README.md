@@ -103,7 +103,7 @@ openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap
 For a reproducible deployment, pin a release tag or commit:
 
 ```bash
-openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.3.0
+openclaw plugins install git:github.com/haya-inc/openclaw-channel-jmap@v0.3.1
 ```
 
 Restart the OpenClaw gateway after changing the plugin or channel
@@ -265,6 +265,12 @@ status process.
 With `dispatchInbound: false`, new mail is still detected and deduplicated, but
 it does not start an agent turn. The agent can inspect it later with
 `jmap_mail_search`, `jmap_mail_get`, and `jmap_mail_thread`.
+
+Search first uses the standard JMAP filters. If a server returns no results for
+a valid subject filter, the client performs a bounded metadata-only text
+fallback and enforces the literal subject match locally. This keeps subject
+search useful across provider indexing differences without fetching message
+bodies or widening the returned result set.
 
 ## Delivery semantics
 

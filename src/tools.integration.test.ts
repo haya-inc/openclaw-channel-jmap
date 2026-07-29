@@ -125,6 +125,11 @@ describe("JMAP agent tools full chain", () => {
       accountId: "default",
       emails: [{ id: "mail-1", subject: "Status" }],
     });
+    expect(server.getCalls("Email/get")[0]?.args).toMatchObject({
+      ids: ["mail-1"],
+      fetchTextBodyValues: false,
+      fetchHTMLBodyValues: false,
+    });
 
     server.enqueueMethod("Email/get", {
       list: [

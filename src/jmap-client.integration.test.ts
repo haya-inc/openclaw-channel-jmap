@@ -284,6 +284,67 @@ describe("JmapClient full chain", () => {
     });
   });
 
+  it("falls back from broken subject filters and matches literal subjects without reading bodies", async () => {
+    const { client, mailAccountId } = await bootstrapClient(server);
+    server.enqueueMethod("Email/query", {
+      queryState: "q-subject-empty",
+      ids: [],
+    });
+    server.enqueueMethod("Email/query", {
+      queryState: "q-text-fallback",
+      ids: ["mail-match", "mail-other"],
+    });
+    server.enqueueMethod("Email/get", {
+      list: [
+        {
+          id: "mail-match",
+          subject: "[JMAP v0.3.0 acceptance] 20260729-2115-JST",
+          preview: "Expected",
+        },
+        {
+          id: "mail-other",
+          subject: "A different acceptance message",
+          preview: "Other",
+        },
+      ],
+    });
+
+    const emails = await client.searchEmails({
+      subject: "[JMAP v0.3.0 acceptance] 20260729-2115-JST",
+      limit: 10,
+    });
+
+    expect(emails).toEqual([
+      expect.objectContaining({
+        id: "mail-match",
+        subject: "[JMAP v0.3.0 acceptance] 20260729-2115-JST",
+      }),
+    ]);
+    const queryCalls = server.getCalls("Email/query");
+    expect(queryCalls).toHaveLength(2);
+    expect(queryCalls[0]?.args).toMatchObject({
+      accountId: mailAccountId,
+      filter: {
+        inMailbox: "mbox-inbox",
+        subject: "[JMAP v0.3.0 acceptance] 20260729-2115-JST",
+      },
+      limit: 10,
+    });
+    expect(queryCalls[1]?.args).toMatchObject({
+      accountId: mailAccountId,
+      filter: {
+        inMailbox: "mbox-inbox",
+        text: "acceptance",
+      },
+      limit: 100,
+    });
+    expect(server.getCalls("Email/get")[0]?.args).toMatchObject({
+      ids: ["mail-match", "mail-other"],
+      fetchTextBodyValues: false,
+      fetchHTMLBodyValues: false,
+    });
+  });
+
   it("marks processed emails as seen with Email/set", async () => {
     const { client, mailAccountId } = await bootstrapClient(server);
     server.enqueueMethod("Email/set", {

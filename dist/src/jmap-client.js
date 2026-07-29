@@ -23,6 +23,16 @@ function accountCapabilitiesFor(session, accountId) {
         .map(([capability]) => capability);
     return [...new Set([...explicit, ...primary])];
 }
+function normalizeSubjectForComparison(value) {
+    return (value ?? "").normalize("NFKC").toLocaleLowerCase();
+}
+function subjectFallbackToken(subject) {
+    const tokens = subject.normalize("NFKC").match(/[\p{L}\p{N}]+/gu) ?? [];
+    return tokens
+        .filter((token) => token.length >= 2)
+        .sort((left, right) => right.length - left.length)[0]
+        ?.slice(0, 64);
+}
 export class JmapMethodError extends Error {
     type;
     constructor(type, message) {
@@ -226,34 +236,100 @@ export class JmapClient {
         });
         return ensureArray(result.list).filter((item) => item.id);
     }
+    async getEmailMetadata(ids) {
+        if (ids.length === 0) {
+            return [];
+        }
+        const state = this.state;
+        const result = await this.callMethod("Email/get", {
+            accountId: state.mailAccountId,
+            ids,
+            properties: [
+                "id",
+                "threadId",
+                "mailboxIds",
+                "from",
+                "to",
+                "cc",
+                "bcc",
+                "replyTo",
+                "subject",
+                "preview",
+                "receivedAt",
+                "sentAt",
+                "messageId",
+                "inReplyTo",
+                "references",
+                "keywords",
+                "size",
+                "header:Auto-Submitted:asText",
+                "header:Precedence:asText",
+                "header:List-Id:asText",
+            ],
+            fetchTextBodyValues: false,
+            fetchHTMLBodyValues: false,
+        });
+        return ensureArray(result.list).filter((item) => item.id);
+    }
     async searchEmails(params = {}) {
         const state = this.state;
         const limit = Math.max(1, Math.min(100, Math.trunc(params.limit ?? 20)));
+        const requestedSubject = params.subject?.trim() || undefined;
         const filter = compact({
             inMailbox: state.inboxMailboxId,
             text: params.text?.trim() || undefined,
             from: params.from?.trim() || undefined,
             to: params.to?.trim() || undefined,
-            subject: params.subject?.trim() || undefined,
+            subject: requestedSubject,
             after: params.after?.trim() || undefined,
             before: params.before?.trim() || undefined,
             hasKeyword: params.unread === false ? "$seen" : undefined,
             notKeyword: params.unread === true ? "$seen" : undefined,
         });
-        const result = await this.callMethod("Email/query", {
-            accountId: state.mailAccountId,
-            filter,
-            sort: [{ property: "receivedAt", isAscending: false }],
-            calculateTotal: false,
-            position: 0,
-            limit,
-        });
-        const ids = ensureArray(result.ids)
-            .map((id) => id.trim())
-            .filter(Boolean);
-        const emails = await this.getEmails(ids);
-        const byId = new Map(emails.map((email) => [email.id, email]));
-        return ids.map((id) => byId.get(id)).filter((email) => Boolean(email));
+        const queryIds = async (queryFilter, queryLimit) => {
+            const result = await this.callMethod("Email/query", {
+                accountId: state.mailAccountId,
+                filter: queryFilter,
+                sort: [{ property: "receivedAt", isAscending: false }],
+                calculateTotal: false,
+                position: 0,
+                limit: queryLimit,
+            });
+            return ensureArray(result.ids)
+                .map((id) => id.trim())
+                .filter(Boolean);
+        };
+        const ids = await queryIds(filter, limit);
+        if (ids.length > 0 || !requestedSubject) {
+            const emails = await this.getEmailMetadata(ids);
+            const byId = new Map(emails.map((email) => [email.id, email]));
+            return ids.map((id) => byId.get(id)).filter((email) => Boolean(email));
+        }
+        // A server can return no matches for a standards-compliant subject filter
+        // even though general text search finds the message. Retry only after an
+        // empty result, then enforce the literal subject condition locally over
+        // metadata so provider quirks cannot widen the visible result set. Bodies
+        // are never fetched for search.
+        const fallbackBase = { ...filter };
+        delete fallbackBase.subject;
+        const token = params.text?.trim() ? undefined : subjectFallbackToken(requestedSubject);
+        const fallbackFilters = [];
+        if (token) {
+            fallbackFilters.push({ ...fallbackBase, text: token });
+        }
+        fallbackFilters.push(fallbackBase);
+        const normalizedSubject = normalizeSubjectForComparison(requestedSubject);
+        for (const fallbackFilter of fallbackFilters) {
+            const fallbackIds = await queryIds(fallbackFilter, 100);
+            const candidates = await this.getEmailMetadata(fallbackIds);
+            const matches = candidates
+                .filter((email) => normalizeSubjectForComparison(email.subject).includes(normalizedSubject))
+                .slice(0, limit);
+            if (matches.length > 0) {
+                return matches;
+            }
+        }
+        return [];
     }
     async getThreadEmails(threadId) {
         const normalizedThreadId = threadId.trim();

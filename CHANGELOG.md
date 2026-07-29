@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- Fall back from empty server-side subject-filter results to bounded
+  metadata-only text search with local literal subject matching.
+- Stop fetching message bodies for search results; full bodies remain limited
+  to explicit get and thread operations.
+
 ## 0.3.0
 
 - Add official, digest-pinned Apache James 3.9.0 and Cyrus 3.13.6
