@@ -155,6 +155,42 @@ openclaw config set plugins.entries.jmap.enabled true
 
 Submission still fails closed if the native approval route is unavailable.
 
+### Codex app-server policy
+
+Registering the reviewed-send contract makes OpenClaw treat the installation as
+having a trusted tool policy. OpenClaw may then promote an *implicit* Codex
+app-server approval policy to `untrusted`. That is safe for interactive use,
+but an unattended agent without an approval route can lose access to unrelated
+native Codex tools such as filesystem or shell operations.
+
+If the host deliberately runs native Codex tools without per-call approval,
+make that existing posture explicit instead of removing JMAP's reviewed-send
+policy:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "codex": {
+        "enabled": true,
+        "config": {
+          "appServer": {
+            "approvalPolicy": "never"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Choose the Codex app-server policy that matches the host's threat model; do not
+copy `never` onto an interactive or multi-tenant host without reviewing its
+native-tool permissions. This setting governs native Codex tools only.
+`jmap_mail_draft_submit` remains independently protected by the
+`jmap-outbound-safety` policy, content-bound preview token, and one-time
+operator approval in `reviewed` mode.
+
 ## Configure
 
 ### Stalwart or another Basic-auth JMAP server
