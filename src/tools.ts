@@ -490,7 +490,7 @@ export function createJmapTools(options?: {
       name: "jmap_mail_search_snippets",
       label: "Get JMAP search snippets",
       description:
-        "Return server-generated subject and preview snippets for known email ids using the same filter semantics as JMAP search. Markup is converted to plain text.",
+        "Return server-generated highlighted snippets for known email ids from a prior text-bearing search. Pass the same non-empty text query. Do not call this after a search without text; use the preview from jmap_mail_search or jmap_mail_get instead. Markup is converted to plain text.",
       parameters: Type.Object(
         {
           accountId: accountIdParam,
@@ -499,7 +499,11 @@ export function createJmapTools(options?: {
             maxItems: 100,
             description: "JMAP Email ids from a prior search.",
           }),
-          text: Type.String({ minLength: 1, description: "Full-text search query." }),
+          text: Type.String({
+            minLength: 1,
+            description:
+              "Required non-empty full-text query from the prior jmap_mail_search. This tool has no query-without-text mode.",
+          }),
           from: Type.Optional(Type.String({ description: "Sender address or name filter." })),
           to: Type.Optional(Type.String({ description: "Recipient address or name filter." })),
           subject: Type.Optional(Type.String({ description: "Subject filter." })),
@@ -514,11 +518,17 @@ export function createJmapTools(options?: {
         const params = rawParams as Record<string, unknown>;
         return runAuditedJmapTool("jmap_mail_search_snippets", params, async () => {
           const emailIds = readEmailIds(params);
+          const text = optionalString(params.text);
+          if (!text) {
+            throw new Error(
+              "text is required and must match a prior text-bearing search; do not use search snippets for a search without text",
+            );
+          }
           const { account, client } = await resolveClient(optionalString(params.accountId));
           const result = await client.getSearchSnippets(
             emailIds,
             compact({
-              text: requiredString(params, "text"),
+              text,
               from: optionalString(params.from),
               to: optionalString(params.to),
               subject: optionalString(params.subject),

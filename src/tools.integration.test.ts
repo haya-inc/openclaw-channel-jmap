@@ -152,6 +152,30 @@ describe("JMAP agent tools full chain", () => {
     ]);
   });
 
+  it("makes the text-bearing-only search snippet contract explicit", async () => {
+    const tool = findTool(createJmapTools(), "jmap_mail_search_snippets");
+    const parameters = tool.parameters as {
+      properties?: {
+        text?: {
+          description?: string;
+        };
+      };
+    };
+
+    expect(tool.description).toContain("Do not call this after a search without text");
+    expect(parameters.properties?.text?.description).toContain(
+      "This tool has no query-without-text mode",
+    );
+    await expect(
+      tool.execute("call-snippets-without-text", {
+        emailIds: ["mail-1"],
+      }),
+    ).rejects.toThrow(
+      "text is required and must match a prior text-bearing search",
+    );
+    expect(server.getCalls("SearchSnippet/get")).toHaveLength(0);
+  });
+
   it("executes the original nine model-visible tools and records anonymous usage telemetry", async () => {
     const tools = createJmapTools({ includeImmediateSend: true });
 

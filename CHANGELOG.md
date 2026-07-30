@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Clarify that `jmap_mail_search_snippets` is only valid for a prior
+  text-bearing search, preventing agents from probing it after an unfiltered
+  latest-mail query.
 - Accept the RFC 8621 representation used by Stalwart where the same
   `text/plain` body part appears in both `textBody` and `htmlBody`, while
   continuing to reject drafts with an actual HTML alternative.
