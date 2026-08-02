@@ -74,6 +74,13 @@ describe("resolveJmapAccount", () => {
     expect(account.config.dispatchInbound).not.toBe(false);
   });
 
+  it("supports redacted inbound signals while preserving dispatchInbound compatibility", () => {
+    expect(JmapAccountSchema.parse({ inboundMode: "signal" })).toMatchObject({
+      inboundMode: "signal",
+    });
+    expect(() => JmapAccountSchema.parse({ inboundMode: "invalid" })).toThrow();
+  });
+
   it("defaults outbound delivery to reviewed and requires autonomous auto-reply", () => {
     expect(JmapAccountSchema.parse({}).outboundPolicy).toBe("reviewed");
     expect(() => JmapAccountSchema.parse({ autoReply: true })).toThrow(

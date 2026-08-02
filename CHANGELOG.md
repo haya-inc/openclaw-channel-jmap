@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `inboundMode: "signal"` for a fixed, sender/subject/body-redacted inbox
+  notification that cannot auto-reply, with one agent turn per poll batch and
+  backward-compatible `dispatchInbound` mapping.
 - Clarify that `jmap_mail_search_snippets` is only valid for a prior
   text-bearing search, preventing agents from probing it after an unfiltered
   latest-mail query.

@@ -56,6 +56,7 @@ describe("JMAP gateway lifecycle", () => {
     expect(snapshot).toMatchObject({
       running: true,
       dispatchInbound: false,
+      inboundMode: "off",
       lastSuccessfulPollAt: 2_000,
       pollCount: 5,
       lastInboundAt: 1_500,

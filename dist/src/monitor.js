@@ -1,6 +1,6 @@
 import { sleep } from "openclaw/plugin-sdk/runtime-env";
 import { resolveJmapAccount } from "./accounts.js";
-import { handleJmapInbound } from "./inbound.js";
+import { handleJmapInbound, resolveJmapInboundMode } from "./inbound.js";
 import { createJmapInboundDeduper } from "./inbound-dedupe.js";
 import { JmapClient, JmapMethodError, parseInboundEmail } from "./jmap-client.js";
 import { getJmapRuntime } from "./runtime.js";
@@ -37,7 +37,9 @@ async function pollLoop(params) {
         maxEntries: RECENT_INBOUND_CACHE_LIMIT,
         logger: runtime,
     });
+    const inboundMode = resolveJmapInboundMode(account.config);
     const processEmailIds = async (ids, source) => {
+        let signalDispatched = false;
         const unseenIds = deduper.filterUnprocessed(ids);
         if (unseenIds.length === 0) {
             return;
@@ -67,7 +69,9 @@ async function pollLoop(params) {
                 continue;
             }
             if (client.isSelfAddress(inbound.senderEmail)) {
-                runtime.info(`skip inbound email=${email.id} reason=self-sender sender=${inbound.senderEmail}`);
+                runtime.info(inboundMode === "signal"
+                    ? "skip inbound reason=self-sender"
+                    : `skip inbound email=${email.id} reason=self-sender sender=${inbound.senderEmail}`);
                 await deduper.remember(emailId);
                 continue;
             }
@@ -89,7 +93,11 @@ async function pollLoop(params) {
                 },
                 account,
                 config,
+                dispatchSignal: inboundMode !== "signal" || !signalDispatched,
             });
+            if (inboundMode === "signal") {
+                signalDispatched = true;
+            }
             runtimeCore.channel.activity.record({
                 channel: "jmap",
                 accountId: account.accountId,
@@ -105,7 +113,9 @@ async function pollLoop(params) {
                 }
             }
             await deduper.remember(emailId);
-            runtime.info(`handled inbound email=${email.id} thread=${inbound.threadId} sender=${inbound.senderEmail}`);
+            runtime.info(inboundMode === "signal"
+                ? "handled inbound through redacted inbox signal"
+                : `handled inbound email=${email.id} thread=${inbound.threadId} sender=${inbound.senderEmail}`);
         }
     };
     const runUnreadSweep = async (reason) => {

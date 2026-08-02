@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./inbound.js", () => ({
   handleJmapInbound: mocks.handleJmapInboundMock,
+  resolveJmapInboundMode: (config: { inboundMode?: string; dispatchInbound?: boolean }) =>
+    config.inboundMode ?? (config.dispatchInbound === false ? "off" : "full"),
 }));
 
 vi.mock("openclaw/plugin-sdk/runtime-env", async () => {
@@ -246,6 +248,48 @@ describe("monitorJmapProvider polling chain", () => {
       },
     });
 
+    monitor.stop();
+  });
+
+  it("coalesces a signal-mode poll batch into one agent notification", async () => {
+    enqueueInitChain(server);
+    enqueuePollChain({
+      server,
+      queryState: "q-signal",
+      queryChangesAddedIds: ["mail-one", "mail-two"],
+      emails: [
+        {
+          id: "mail-one",
+          threadId: "thread-one",
+          from: [{ email: "one@example.com" }],
+          to: [{ email: "bot@example.com" }],
+          preview: "first",
+          receivedAt: "2026-02-16T05:21:00.000Z",
+        },
+        {
+          id: "mail-two",
+          threadId: "thread-two",
+          from: [{ email: "two@example.com" }],
+          to: [{ email: "bot@example.com" }],
+          preview: "second",
+          receivedAt: "2026-02-16T05:22:00.000Z",
+        },
+      ],
+    });
+    const config = createConfig(server);
+    config.channels!.jmap!.inboundMode = "signal";
+    config.channels!.jmap!.markAsRead = false;
+    configureRuntime(config, vi.fn());
+
+    const monitor = await monitorJmapProvider({ config });
+    await vi.waitFor(() => {
+      expect(mocks.handleJmapInboundMock).toHaveBeenCalledTimes(2);
+    });
+    expect(mocks.handleJmapInboundMock.mock.calls.map(([call]) => call.dispatchSignal)).toEqual([
+      true,
+      false,
+    ]);
+    expect(server.getCalls("Email/set")).toHaveLength(0);
     monitor.stop();
   });
 

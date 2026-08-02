@@ -16,6 +16,7 @@ export const JmapAccountSchemaBase = z
         .enum(["disabled", "reviewed", "autonomous"])
         .optional()
         .default("reviewed"),
+    inboundMode: z.enum(["full", "signal", "off"]).optional(),
     dispatchInbound: z.boolean().optional().default(true),
     autoReply: z.boolean().optional().default(false),
     markAsRead: z.boolean().optional().default(false),

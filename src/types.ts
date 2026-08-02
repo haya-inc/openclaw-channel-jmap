@@ -17,6 +17,7 @@ export const DEFAULT_MAX_BODY_BYTES = 100_000;
 
 export type JmapAuthMode = "bearer" | "basic";
 export type JmapOutboundPolicy = "disabled" | "reviewed" | "autonomous";
+export type JmapInboundMode = "full" | "signal" | "off";
 
 export type JmapAccountConfig = {
   name?: string;
@@ -30,6 +31,8 @@ export type JmapAccountConfig = {
   sessionUrl?: string;
   pollIntervalSec?: number;
   outboundPolicy?: JmapOutboundPolicy;
+  inboundMode?: JmapInboundMode;
+  /** @deprecated Use inboundMode. false maps to off and true maps to full. */
   dispatchInbound?: boolean;
   autoReply?: boolean;
   markAsRead?: boolean;

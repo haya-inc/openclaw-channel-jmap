@@ -292,7 +292,8 @@ Top-level settings are inherited by named accounts:
 | `outboundPolicy` | `reviewed` | `disabled`, one-time operator-approved `reviewed`, or explicitly unattended `autonomous` delivery |
 | `dmPolicy` | `allowlist` | Sender access policy |
 | `allowFrom` | `[]` | Allowed sender addresses; `open` requires `["*"]` |
-| `dispatchInbound` | `true` | Start an agent turn for accepted new mail; set `false` for passive/search-only inboxes |
+| `inboundMode` | `full` | `full` delivers accepted mail, `signal` starts a body/sender/subject-redacted inbox turn, and `off` is passive/search-only |
+| `dispatchInbound` | `true` | Deprecated compatibility switch: `true` maps to `full`, `false` maps to `off`; `inboundMode` takes precedence |
 | `autoReply` | `false` | Send the model response back to the email thread; requires `outboundPolicy: "autonomous"` |
 | `markAsRead` | `false` | Mark successfully handled inbound mail read |
 | `processExistingUnread` | `false` | Process unread mail already present at startup |
@@ -429,9 +430,12 @@ The same anonymous tool/outbound events are appended under OpenClaw's state
 directory so `openclaw agent --local` tool calls remain visible to the gateway
 status process.
 
-With `dispatchInbound: false`, new mail is still detected and deduplicated, but
-it does not start an agent turn. The agent can inspect it later with
-`jmap_mail_search`, `jmap_mail_get`, and `jmap_mail_thread`.
+With `inboundMode: "off"` (or legacy `dispatchInbound: false`), new mail is
+still detected and deduplicated, but it does not start an agent turn. With
+`inboundMode: "signal"`, one fixed notification is dispatched per poll batch;
+the notification contains no sender, subject, thread id, or message body and
+can never auto-reply. The agent discovers the actual unread messages explicitly
+with `jmap_mail_search`, `jmap_mail_get`, and `jmap_mail_thread`.
 
 Search first uses the standard JMAP filters. If a server returns no results for
 a valid subject filter, the client performs a bounded metadata-only text

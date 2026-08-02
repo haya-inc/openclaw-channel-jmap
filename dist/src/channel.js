@@ -3,7 +3,7 @@ import { missingTargetError } from "openclaw/plugin-sdk/channel-feedback";
 import { runStoppablePassiveMonitor } from "openclaw/plugin-sdk/extension-shared";
 import { listJmapAccountIds, resolveDefaultJmapAccountId, resolveJmapAccount } from "./accounts.js";
 import { JmapConfigSchema } from "./config-schema.js";
-import { jmapPairing } from "./inbound.js";
+import { jmapPairing, resolveJmapInboundMode } from "./inbound.js";
 import { monitorJmapProvider } from "./monitor.js";
 import { looksLikeEmailAddress, normalizeJmapTarget, parseJmapThreadTarget } from "./normalize.js";
 import { isJmapAutoReplyEnabled, resolveJmapOutboundPolicy, } from "./outbound-policy.js";
@@ -329,7 +329,8 @@ export const jmapPlugin = {
                 toolErrorCount: Math.max(observed.toolErrorCount, activity?.toolErrorCount ?? 0),
                 dmPolicy: account.config.dmPolicy ?? "allowlist",
                 outboundPolicy: resolveJmapOutboundPolicy(account),
-                dispatchInbound: account.config.dispatchInbound !== false,
+                inboundMode: resolveJmapInboundMode(account.config),
+                dispatchInbound: resolveJmapInboundMode(account.config) === "full",
                 autoReply: isJmapAutoReplyEnabled(account),
                 markAsRead: account.config.markAsRead === true,
             };
